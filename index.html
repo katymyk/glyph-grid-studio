@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glyph Grid Studio — 1920×1080</title>
+<style>
+  :root{
+    --bg:#14140f; --panel:#1d1d17; --panel-2:#26261e; --line:#34342a;
+    --text:#e9e6dc; --muted:#9a9789; --accent:#e8562e; --radius:8px;
+    --diatype:"ABC Diatype","Helvetica Neue",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    --diamono:"ABC Diatype Mono","SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--diatype);font-size:13px}
+  #app{display:flex;height:100vh;overflow:hidden}
+
+  #sidebar{width:330px;flex:0 0 330px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;height:100%}
+  #sidebar header{padding:14px 16px;border-bottom:1px solid var(--line)}
+  #sidebar header h1{margin:0;font-size:14px;font-weight:600;letter-spacing:.02em;font-family:var(--diamono)}
+  #sidebar header p{margin:4px 0 0;font-size:11px;color:var(--muted)}
+  #controls{overflow-y:auto;padding:0 0 40px;flex:1}
+  .group{border-bottom:1px solid var(--line)}
+  .group>summary{cursor:pointer;list-style:none;padding:12px 16px;font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:flex;align-items:center;justify-content:space-between;user-select:none}
+  .group>summary::-webkit-details-marker{display:none}
+  .group>summary::after{content:"+";font-size:15px;color:var(--muted)}
+  .group[open]>summary::after{content:"–"}
+  .group[open]>summary{color:var(--text)}
+  .body{padding:6px 16px 16px}
+  .row{margin:10px 0}
+  .row label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px}
+  .row .val{float:right;color:var(--text);font-variant-numeric:tabular-nums;font-family:var(--diamono)}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  input[type=text],input[type=number],textarea,select{width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:7px 9px;font-family:var(--diamono);font-size:12px}
+  textarea{resize:vertical;min-height:50px;line-height:1.4}
+  input[type=color]{padding:0;border:1px solid var(--line);border-radius:5px;background:none;cursor:pointer}
+  .btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:8px 10px;cursor:pointer;font-size:12px;width:100%;transition:.12s;font-family:var(--diatype)}
+  .btn:hover{border-color:#4c4c3e;background:#2e2e24}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#1a0d06;font-weight:600}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.small{padding:6px 10px;font-size:11px}
+  .btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .btn-grid.three{grid-template-columns:1fr 1fr 1fr}
+  .seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .seg button{flex:1;background:var(--panel-2);border:0;color:var(--muted);padding:7px;cursor:pointer;font-size:11px;font-family:var(--diatype)}
+  .seg button.on{background:var(--accent);color:#1a0d06;font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .chip{background:var(--panel-2);border:1px solid var(--line);border-radius:20px;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--muted)}
+  .chip:hover{border-color:#4c4c3e}
+  .hint{font-size:10.5px;color:var(--muted);line-height:1.5;margin-top:6px}
+  .warn{font-size:10.5px;color:#d9b25a;line-height:1.5;margin-top:6px}
+  .switch{display:flex;align-items:center;justify-content:space-between}
+  .switch input{accent-color:var(--accent);width:16px;height:16px}
+
+  /* palette — bigger, hex-editable rows */
+  .pal-row{display:flex;align-items:center;gap:8px;margin:7px 0}
+  .pal-row input[type=color]{width:40px;height:34px;flex:0 0 40px}
+  .pal-row input.hex{flex:1;text-transform:lowercase}
+  .pal-row .del{flex:0 0 30px;height:34px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;color:var(--muted);cursor:pointer;font-size:15px}
+  .pal-row .del:hover{color:#fff;background:#3a2420;border-color:#5a3028}
+  .add-row{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .add-row input[type=color]{width:40px;height:34px;flex:0 0 40px}
+  .add-row input.hex{flex:1}
+  .add-row .btn{flex:0 0 auto;width:auto;padding:8px 14px}
+
+  #stage{flex:1;display:flex;flex-direction:column;min-width:0}
+  #toolbar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+  #toolbar .sp{flex:1}
+  #toolbar .status{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;font-family:var(--diamono)}
+  #canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;background:repeating-conic-gradient(#191914 0% 25%, #14140f 0% 50%) 50% / 22px 22px}
+  #canvas-scale{position:relative;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+  canvas{display:block;position:absolute;top:0;left:0}
+  #maskCanvas{opacity:.5;pointer-events:none}
+  .mask-mode #maskCanvas{pointer-events:auto;cursor:crosshair}
+  .pill{font-size:10px;padding:3px 8px;border-radius:20px;background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-family:var(--diamono)}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <header>
+      <h1>Glyph Grid Studio</h1>
+      <p>Generative symbol grid · 1920×1080</p>
+    </header>
+    <div id="controls">
+
+      <!-- QUICK ACTIONS -->
+      <div class="body" style="padding-top:12px;padding-bottom:12px;border-bottom:1px solid var(--line)">
+        <div class="btn-grid three">
+          <button class="btn small" id="undoBtn" title="Undo last change">↩ Undo</button>
+          <button class="btn small" id="resetBtn" title="Reset to defaults">⟲ Reset</button>
+          <button class="btn small primary" id="surpriseBtn" title="Randomize everything">✦ Surprise</button>
+        </div>
+      </div>
+
+      <details class="group" open>
+        <summary>Mode</summary>
+        <div class="body">
+          <div class="seg" id="modeSeg">
+            <button data-m="generative" class="on">Generative</button>
+            <button data-m="ascii">ASCII image</button>
+          </div>
+          <div id="asciiControls" style="display:none">
+            <div class="row" style="margin-top:12px">
+              <button class="btn" id="loadImage">Upload image</button>
+              <input type="file" id="imageFile" accept="image/*" style="display:none">
+              <p class="hint" id="imgStatus">No image loaded. Uploads stay on your machine.</p>
+            </div>
+            <div class="row">
+              <label>Character ramp (light → dark)</label>
+              <input type="text" id="ramp" value=" .:-=+*#%@">
+            </div>
+            <div class="row switch">
+              <label style="margin:0">Invert brightness</label>
+              <input type="checkbox" id="invert">
+            </div>
+            <div class="row switch">
+              <label style="margin:0">Use image colors</label>
+              <input type="checkbox" id="useImgColors">
+            </div>
+            <p class="hint">Bright areas → sparse chars, dark areas → dense chars. Increase grid columns for more detail.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="group" open>
+        <summary>Content</summary>
+        <div class="body">
+          <div class="row" id="glyphRow">
+            <label>Symbols / text (space or line separated)</label>
+            <textarea id="glyphs">/ \ < > -</textarea>
+          </div>
+          <div class="row" id="presetRow">
+            <label>Quick sets</label>
+            <div class="chips" id="presetChips">
+              <span class="chip" data-set="/ \ < > -">strokes</span>
+              <span class="chip" data-set="• ◦ ● ○">dots</span>
+              <span class="chip" data-set="0 1">binary</span>
+              <span class="chip" data-set="A B C D E F">letters</span>
+              <span class="chip" data-set="↑ ↗ → ↘ ↓ ↙ ← ↖">arrows</span>
+              <span class="chip" data-set="+ × ÷ = ≈ ∞">math</span>
+            </div>
+          </div>
+          <div class="row">
+            <label>Font</label>
+            <select id="fontFamily">
+              <option value="mono" selected>ABC Diatype Mono</option>
+              <option value="sans">ABC Diatype</option>
+              <option value="fallmono">Generic monospace</option>
+              <option value="fallsans">Generic sans-serif</option>
+              <option value="serif">Generic serif</option>
+            </select>
+            <p class="warn" id="fontWarn">ABC Diatype is a licensed Dinamo font — install it on this machine and it will be used everywhere, including exports. Otherwise a fallback is used.</p>
+          </div>
+          <div class="row">
+            <label>Weight</label>
+            <div class="seg" id="weightSeg">
+              <button data-w="300">Light</button>
+              <button data-w="400" class="on">Regular</button>
+              <button data-w="700">Bold</button>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="group" open>
+        <summary>Grid</summary>
+        <div class="body">
+          <div class="row switch">
+            <label style="margin:0">Lock grid to symbol size</label>
+            <input type="checkbox" id="lockGrid">
+          </div>
+          <div class="row" id="spacingRow" style="display:none">
+            <label>Spacing <span class="val" id="spacingVal">1.00</span></label>
+            <input type="range" id="spacing" min="50" max="200" value="100">
+          </div>
+          <div class="row">
+            <label>Columns <span class="val" id="colsVal">24</span></label>
+            <input type="range" id="cols" min="4" max="240" value="24">
+          </div>
+          <div class="row">
+            <label>Rows <span class="val" id="rowsVal">14</span></label>
+            <input type="range" id="rows" min="3" max="140" value="14">
+          </div>
+          <div class="row" id="densityRow">
+            <label>Cell fill <span class="val" id="densityVal">45%</span></label>
+            <input type="range" id="density" min="1" max="100" value="45">
+          </div>
+          <div class="row">
+            <label>Symbol size <span class="val" id="sizeVal">42px</span></label>
+            <input type="range" id="size" min="6" max="200" value="42">
+          </div>
+          <div class="row">
+            <label>Size jitter <span class="val" id="sizeJitVal">0%</span></label>
+            <input type="range" id="sizeJit" min="0" max="100" value="0">
+          </div>
+          <div class="row" id="posJitRow">
+            <label>Position jitter <span class="val" id="posJitVal">0%</span></label>
+            <input type="range" id="posJit" min="0" max="100" value="0">
+          </div>
+          <div class="row">
+            <label>Rotation, ° <span class="val" id="rotJitVal">0</span></label>
+            <input type="range" id="rotJit" min="0" max="90" value="0">
+          </div>
+          <div class="row">
+            <button class="btn small" id="showGrid" style="width:100%">Show grid guide: off</button>
+          </div>
+        </div>
+      </details>
+
+      <details class="group">
+        <summary>Spawn zone</summary>
+        <div class="body">
+          <div class="row">
+            <div class="seg" id="zoneSeg">
+              <button data-z="full" class="on">Full frame</button>
+              <button data-z="ellipse">Ellipse</button>
+              <button data-z="mask">Brush</button>
+            </div>
+          </div>
+          <div id="ellipseControls" style="display:none">
+            <div class="row"><label>Center X <span class="val" id="ezxVal">50%</span></label><input type="range" id="ezx" min="0" max="100" value="50"></div>
+            <div class="row"><label>Center Y <span class="val" id="ezyVal">50%</span></label><input type="range" id="ezy" min="0" max="100" value="50"></div>
+            <div class="row"><label>Width <span class="val" id="ezwVal">60%</span></label><input type="range" id="ezw" min="5" max="100" value="60"></div>
+            <div class="row"><label>Height <span class="val" id="ezhVal">60%</span></label><input type="range" id="ezh" min="5" max="100" value="60"></div>
+          </div>
+          <div id="maskControls" style="display:none">
+            <div class="row"><label>Brush size <span class="val" id="brushVal">80</span></label><input type="range" id="brush" min="10" max="300" value="80"></div>
+            <div class="btn-grid">
+              <button class="btn small" id="brushDraw">Draw</button>
+              <button class="btn small" id="brushErase">Erase</button>
+            </div>
+            <div class="row" style="margin-top:8px"><button class="btn small" id="clearMask" style="width:100%">Clear mask</button></div>
+            <p class="hint">Paint directly on the frame — symbols appear only inside the painted area.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="group">
+        <summary>Colors</summary>
+        <div class="body">
+          <div class="row">
+            <label>Background</label>
+            <div class="pal-row">
+              <input type="color" id="bgColor" value="#efece4">
+              <input type="text" class="hex" id="bgHex" value="#efece4">
+              <label class="switch" style="flex:0;gap:4px;font-size:10px;color:var(--muted)"><input type="checkbox" id="bgTransparent"> transp.</label>
+            </div>
+          </div>
+          <div class="row">
+            <label>Element palette <span style="color:var(--muted)">(random per symbol)</span></label>
+            <div id="palette"></div>
+            <div class="add-row">
+              <input type="color" id="newColor" value="#2b2b28">
+              <input type="text" class="hex" id="newHex" value="#2b2b28" placeholder="#000000">
+              <button class="btn" id="addColor">+ Add</button>
+            </div>
+            <p class="hint">For a rare accent (like the reference): keep most swatches dark and add 1–2 bright ones.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="group">
+        <summary>Animation</summary>
+        <div class="body">
+          <div class="row switch"><label style="margin:0">Dynamic mode</label><input type="checkbox" id="animate"></div>
+          <div id="animControls" style="display:none">
+            <div class="row">
+              <label>Type</label>
+              <select id="animMode">
+                <option value="flicker">Flicker (fade in/out)</option>
+                <option value="typewriter">Typewriter reveal</option>
+                <option value="shuffle">Symbol shuffle</option>
+                <option value="drift">Drift</option>
+              </select>
+            </div>
+            <div class="row"><label>Speed <span class="val" id="speedVal">1.0×</span></label><input type="range" id="speed" min="10" max="400" value="100"></div>
+            <div class="row"><label>Intensity <span class="val" id="intensityVal">50%</span></label><input type="range" id="intensity" min="1" max="100" value="50"></div>
+            <div class="row"><label>Loop length, sec <span class="val" id="loopVal">4</span></label><input type="range" id="loop" min="1" max="15" value="4"></div>
+          </div>
+        </div>
+      </details>
+
+      <details class="group" open>
+        <summary>Export</summary>
+        <div class="body">
+          <div class="btn-grid">
+            <button class="btn" id="exSVG">SVG · Figma</button>
+            <button class="btn" id="exPNG">PNG · 2×</button>
+          </div>
+          <div class="row" style="margin-top:8px"><button class="btn" id="exJSON" style="width:100%">JSON · coords for AE</button></div>
+          <div class="row">
+            <label>PNG sequence for After Effects</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="number" id="fps" value="25" min="1" max="60" style="width:70px">
+              <span style="font-size:11px;color:var(--muted)">fps ×</span>
+              <span id="frameCount" style="font-size:11px;color:var(--muted);font-family:var(--diamono)"></span>
+            </div>
+            <button class="btn" id="exSeq" style="margin-top:8px;width:100%">Download sequence (.zip)</button>
+            <p class="hint">Sequence works in dynamic mode. Frames export as lossless PNG at 1920×1080.</p>
+          </div>
+          <div class="row">
+            <button class="btn small" id="saveProj" style="width:100%">Save project</button>
+            <button class="btn small" id="loadProj" style="width:100%;margin-top:6px">Load project</button>
+            <input type="file" id="projFile" accept=".json" style="display:none">
+          </div>
+        </div>
+      </details>
+
+      <details class="group">
+        <summary>Randomness</summary>
+        <div class="body">
+          <div class="row"><label>Seed <span class="val" id="seedVal">1</span></label><input type="range" id="seed" min="1" max="9999" value="1"></div>
+          <button class="btn" id="reroll" style="width:100%">🎲 New layout (same settings)</button>
+          <p class="hint">Same seed = same layout. Handy for returning to a variation you liked.</p>
+        </div>
+      </details>
+
+    </div>
+  </aside>
+
+  <main id="stage">
+    <div id="toolbar">
+      <span class="pill">1920 × 1080</span>
+      <span class="pill" id="zoomPill">Zoom 100%</span>
+      <div class="sp"></div>
+      <span class="status" id="status">—</span>
+      <button class="btn small" id="fitBtn" style="width:auto">Fit</button>
+      <button class="btn small primary" id="playBtn" style="display:none;width:auto">▶ Play</button>
+    </div>
+    <div id="canvas-wrap">
+      <div id="canvas-scale">
+        <canvas id="mainCanvas" width="1920" height="1080"></canvas>
+        <canvas id="maskCanvas" width="1920" height="1080"></canvas>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+"use strict";
+const W=1920,H=1080;
+const main=document.getElementById('mainCanvas'), mctx=main.getContext('2d',{willReadFrequently:false});
+const maskC=document.getElementById('maskCanvas'), maskCtx=maskC.getContext('2d',{willReadFrequently:true});
+const $=id=>document.getElementById(id);
+
+const FONT_STACKS={
+  mono:'"ABC Diatype Mono","SFMono-Regular",ui-monospace,Menlo,Consolas,monospace',
+  sans:'"ABC Diatype","Helvetica Neue",Arial,sans-serif',
+  fallmono:'ui-monospace,Menlo,Consolas,monospace',
+  fallsans:'Arial,Helvetica,sans-serif',
+  serif:'Georgia,"Times New Roman",serif'
+};
+
+const DEFAULTS={
+  mode:'generative',
+  glyphs:['/','\\','<','>','-'],
+  fontKey:'mono', weight:'400',
+  cols:24, rows:14, lockGrid:false, spacing:100,
+  density:45, size:42, sizeJit:0, posJit:0, rotJit:0,
+  showGrid:false,
+  zone:'full', ez:{x:50,y:50,w:60,h:60}, brush:80, brushMode:'draw',
+  bg:'#efece4', bgTransparent:false,
+  palette:['#2b2b28','#2b2b28','#2b2b28','#2b2b28','#e8562e','#c9a6e8'],
+  animate:false, animMode:'flicker', speed:100, intensity:50, loop:4, fps:25,
+  seed:1,
+  ramp:' .:-=+*#%@', invert:false, useImgColors:false
+};
+let state=structuredClone(DEFAULTS);
+
+// image (ASCII) — kept outside serialized state
+let sourceImg=null;        // HTMLImageElement
+let sampled=null;          // {cols,rows,lum:Float32Array,rgb:Uint8ClampedArray}
+
+// ---------- history (undo) ----------
+let history=[]; const HISTORY_MAX=60;
+function snapshot(){
+  history.push(structuredClone(state));
+  if(history.length>HISTORY_MAX) history.shift();
+}
+let snapTimer=null;
+function commit(){ clearTimeout(snapTimer); snapTimer=setTimeout(snapshot,250); }
+function undo(){
+  if(history.length===0) return;
+  state=history.pop();
+  syncUIFromState(); rebuild();
+}
+
+// ---------- seeded RNG ----------
+function makeRNG(seed){let t=seed>>>0;return function(){t+=0x6D2B79F5;let r=Math.imul(t^(t>>>15),1|t);r^=r+Math.imul(r^(r>>>7),61|r);return((r^(r>>>14))>>>0)/4294967296;};}
+
+// ---------- cells ----------
+let cells=[];
+function buildCells(){
+  const rng=makeRNG(state.seed); cells=[];
+  const cw=W/state.cols, ch=H/state.rows;
+  for(let r=0;r<state.rows;r++)for(let c=0;c<state.cols;c++){
+    const cx=(c+0.5)*cw, cy=(r+0.5)*ch;
+    cells.push({c,r,cx,cy,cw,ch,rFill:rng(),rGlyph:rng(),rColor:rng(),rSize:rng(),rPx:rng()*2-1,rPy:rng()*2-1,rRot:rng()*2-1,rPhase:rng()});
+  }
+}
+
+// ---------- image sampling for ASCII ----------
+function sampleImage(){
+  if(!sourceImg){sampled=null;return;}
+  const c=state.cols, r=state.rows;
+  const off=document.createElement('canvas'); off.width=c; off.height=r;
+  const octx=off.getContext('2d',{willReadFrequently:true});
+  // cover-fit the image into cols×rows
+  const ir=sourceImg.width/sourceImg.height, gr=c/r;
+  let sw,sh,sx,sy;
+  if(ir>gr){ sh=sourceImg.height; sw=sh*gr; sx=(sourceImg.width-sw)/2; sy=0; }
+  else{ sw=sourceImg.width; sh=sw/gr; sx=0; sy=(sourceImg.height-sh)/2; }
+  octx.drawImage(sourceImg,sx,sy,sw,sh,0,0,c,r);
+  const data=octx.getImageData(0,0,c,r).data;
+  const lum=new Float32Array(c*r), rgb=new Uint8ClampedArray(c*r*3);
+  for(let i=0;i<c*r;i++){
+    const R=data[i*4],G=data[i*4+1],B=data[i*4+2];
+    lum[i]=(0.2126*R+0.7152*G+0.0722*B)/255;
+    rgb[i*3]=R;rgb[i*3+1]=G;rgb[i*3+2]=B;
+  }
+  sampled={cols:c,rows:r,lum,rgb};
+}
+
+// ---------- zone test ----------
+function inZone(cx,cy){
+  if(state.zone==='full') return true;
+  if(state.zone==='ellipse'){
+    const ex=state.ez.x/100*W,ey=state.ez.y/100*H,rw=state.ez.w/100*W/2,rh=state.ez.h/100*H/2;
+    if(rw<=0||rh<=0) return false;
+    const dx=(cx-ex)/rw,dy=(cy-ey)/rh;return dx*dx+dy*dy<=1;
+  }
+  if(state.zone==='mask'){
+    const px=Math.max(0,Math.min(W-1,Math.floor(cx))), py=Math.max(0,Math.min(H-1,Math.floor(cy)));
+    return maskCtx.getImageData(px,py,1,1).data[3]>20;
+  }
+  return true;
+}
+
+// ---------- unified scene draw (live + export) ----------
+function drawScene(ctx,tSec,guide){
+  ctx.clearRect(0,0,W,H);
+  if(!state.bgTransparent){ctx.fillStyle=state.bg;ctx.fillRect(0,0,W,H);}
+  if(guide && state.showGrid){
+    ctx.strokeStyle='rgba(120,120,120,.25)';ctx.lineWidth=1;
+    const cw=W/state.cols,ch=H/state.rows;
+    for(let c=1;c<state.cols;c++){ctx.beginPath();ctx.moveTo(c*cw,0);ctx.lineTo(c*cw,H);ctx.stroke();}
+    for(let r=1;r<state.rows;r++){ctx.beginPath();ctx.moveTo(0,r*ch);ctx.lineTo(W,r*ch);ctx.stroke();}
+  }
+  const fam=FONT_STACKS[state.fontKey];
+  const speed=state.speed/100, intensity=state.intensity/100, loopDur=state.loop;
+  const ascii = state.mode==='ascii' && sampled;
+  const ramp = state.ramp.length?state.ramp:' .';
+  let drawn=0;
+
+  for(const cell of cells){
+    // fill / thinning
+    if(!ascii && cell.rFill*100>=state.density) continue;
+    if(ascii && cell.rFill*100>=state.density) continue; // density still thins ASCII if <100
+
+    const jx=cell.rPx*(state.posJit/100)*cell.cw*0.5;
+    const jy=cell.rPy*(state.posJit/100)*cell.ch*0.5;
+    const x=cell.cx+jx, y=cell.cy+jy;
+    if(!inZone(x,y)) continue;
+
+    const sizeMul=1+cell.rSize*(state.sizeJit/100)-(state.sizeJit/200);
+    const size=state.size*sizeMul;
+
+    let glyph, color;
+    if(ascii){
+      const idx=cell.r*sampled.cols+cell.c;
+      const b=sampled.lum[idx];
+      let t=state.invert? b : 1-b;
+      let ri=Math.round(t*(ramp.length-1)); ri=Math.max(0,Math.min(ramp.length-1,ri));
+      glyph=ramp[ri];
+      if(glyph===' ') continue; // skip empty
+      if(state.useImgColors){ color=`rgb(${sampled.rgb[idx*3]},${sampled.rgb[idx*3+1]},${sampled.rgb[idx*3+2]})`; }
+      else color=state.palette[Math.floor(cell.rColor*state.palette.length)]||'#000';
+    }else{
+      let gi=Math.floor(cell.rGlyph*state.glyphs.length);
+      glyph=state.glyphs[gi]||'?';
+      color=state.palette[Math.floor(cell.rColor*state.palette.length)]||'#000';
+    }
+
+    let alpha=1,dx=0,dy=0,rot=cell.rRot*(state.rotJit*Math.PI/180);
+    if(state.animate){
+      const phase=cell.rPhase, cyc=((tSec*speed)/loopDur+phase)%1;
+      if(state.animMode==='flicker'){const s=0.5-0.5*Math.cos(cyc*Math.PI*2);alpha=1-intensity+intensity*s;}
+      else if(state.animMode==='typewriter'){const order=(cell.r*state.cols+cell.c)/cells.length;alpha=cyc>=order?1:0;}
+      else if(state.animMode==='shuffle'){ if(!ascii){const steps=Math.max(1,Math.round(2+intensity*10));const k=Math.floor(tSec*speed*steps+phase*steps);glyph=state.glyphs[(Math.floor(cell.rGlyph*state.glyphs.length)+k)%state.glyphs.length]||glyph;} }
+      else if(state.animMode==='drift'){const amp=intensity*30;dx=Math.sin(tSec*speed*1.3+phase*6.28)*amp;dy=Math.cos(tSec*speed*1.1+phase*6.28)*amp;}
+    }
+    if(alpha<=0.01) continue;
+
+    ctx.save();
+    ctx.globalAlpha=alpha;
+    ctx.translate(x+dx,y+dy);
+    if(rot) ctx.rotate(rot);
+    ctx.fillStyle=color;
+    ctx.font=`${state.weight} ${size}px ${fam}`;
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(glyph,0,0);
+    ctx.restore();
+    drawn++;
+  }
+  return drawn;
+}
+
+// ---------- live loop ----------
+let rafId=null, startTime=performance.now();
+function frame(now){
+  const t=(now-startTime)/1000;
+  const drawn=drawScene(mctx,t,true);
+  $('status').textContent=`${drawn} elements · ${state.cols}×${state.rows}${state.mode==='ascii'?' · ASCII':''}`;
+  if(state.animate) rafId=requestAnimationFrame(frame);
+}
+function draw(){
+  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+  if(state.animate){startTime=performance.now();rafId=requestAnimationFrame(frame);}
+  else frame(performance.now());
+}
+function rebuild(){ buildCells(); if(state.mode==='ascii') sampleImage(); draw(); }
+
+// ============================================================
+//  UI binding
+// ============================================================
+function parseGlyphs(str){
+  const t=str.trim(); if(!t) return ['?'];
+  let parts=t.includes('\n')?t.split(/\n/):t.split(/\s+/);
+  parts=parts.map(s=>s.trim()).filter(Boolean);
+  return parts.length?parts:['?'];
+}
+function validHex(h){return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(h.trim());}
+
+// mode
+document.querySelectorAll('#modeSeg button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); state.mode=b.dataset.m;
+  const isAscii=state.mode==='ascii';
+  $('asciiControls').style.display=isAscii?'block':'none';
+  $('glyphRow').style.display=isAscii?'none':'block';
+  $('presetRow').style.display=isAscii?'none':'block';
+  commit(); rebuild();
+}));
+$('loadImage').addEventListener('click',()=>$('imageFile').click());
+$('imageFile').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const url=URL.createObjectURL(f);
+  const img=new Image();
+  img.onload=()=>{sourceImg=img;$('imgStatus').textContent=`Loaded: ${f.name} (${img.width}×${img.height})`;rebuild();URL.revokeObjectURL(url);};
+  img.src=url;
+});
+$('ramp').addEventListener('input',e=>{state.ramp=e.target.value;commit();draw();});
+$('invert').addEventListener('change',e=>{state.invert=e.target.checked;commit();draw();});
+$('useImgColors').addEventListener('change',e=>{state.useImgColors=e.target.checked;commit();draw();});
+
+// content
+$('glyphs').addEventListener('input',e=>{state.glyphs=parseGlyphs(e.target.value);commit();draw();});
+document.querySelectorAll('#presetChips .chip').forEach(chip=>chip.addEventListener('click',()=>{
+  $('glyphs').value=chip.dataset.set;state.glyphs=parseGlyphs(chip.dataset.set);commit();draw();
+}));
+$('fontFamily').addEventListener('change',e=>{state.fontKey=e.target.value;commit();draw();});
+document.querySelectorAll('#weightSeg button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#weightSeg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');state.weight=b.dataset.w;commit();draw();
+}));
+
+// grid lock
+function applyGridLock(){
+  if(!state.lockGrid) return;
+  const sp=state.spacing/100;
+  const advW=state.size*0.6*sp, lineH=state.size*1.05*sp;
+  state.cols=Math.max(2,Math.min(240,Math.round(W/advW)));
+  state.rows=Math.max(2,Math.min(140,Math.round(H/lineH)));
+  setSlider('cols',state.cols); setSlider('rows',state.rows);
+}
+$('lockGrid').addEventListener('change',e=>{
+  state.lockGrid=e.target.checked;
+  $('spacingRow').style.display=state.lockGrid?'block':'none';
+  $('cols').disabled=state.lockGrid; $('rows').disabled=state.lockGrid;
+  if(state.lockGrid) applyGridLock();
+  commit(); rebuild();
+});
+
+function setSlider(id,v,fmt){const el=$(id);if(!el)return;el.value=v;const val=$(id+'Val');if(val)val.textContent=fmt?fmt(v):v;}
+function bindSlider(id,key,fmt,after){
+  const el=$(id);
+  el.addEventListener('input',()=>{
+    state[key]=parseFloat(el.value);
+    const val=$(id+'Val'); if(val) val.textContent=fmt?fmt(el.value):el.value;
+    (after||draw)(); commit();
+  });
+}
+bindSlider('spacing','spacing',v=>(v/100).toFixed(2),()=>{applyGridLock();rebuild();});
+bindSlider('cols','cols',v=>v,rebuild);
+bindSlider('rows','rows',v=>v,rebuild);
+bindSlider('density','density',v=>v+'%',draw);
+$('size').addEventListener('input',()=>{
+  state.size=+$('size').value; $('sizeVal').textContent=state.size+'px';
+  if(state.lockGrid){applyGridLock();rebuild();} else draw();
+  commit();
+});
+bindSlider('sizeJit','sizeJit',v=>v+'%',draw);
+bindSlider('posJit','posJit',v=>v+'%',draw);
+bindSlider('rotJit','rotJit',v=>v,draw);
+$('showGrid').addEventListener('click',e=>{state.showGrid=!state.showGrid;e.target.textContent='Show grid guide: '+(state.showGrid?'on':'off');draw();});
+
+// zone
+document.querySelectorAll('#zoneSeg button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#zoneSeg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');state.zone=b.dataset.z;
+  $('ellipseControls').style.display=state.zone==='ellipse'?'block':'none';
+  $('maskControls').style.display=state.zone==='mask'?'block':'none';
+  $('app').classList.toggle('mask-mode',state.zone==='mask');
+  commit();draw();
+}));
+['ezx','ezy','ezw','ezh'].forEach(id=>{
+  const key=id.slice(2); const label={x:'x',y:'y',w:'w',h:'h'}[key];
+  $(id).addEventListener('input',()=>{state.ez[label]=+$(id).value;$(id+'Val').textContent=$(id).value+'%';draw();commit();});
+});
+$('brush').addEventListener('input',e=>{state.brush=+e.target.value;$('brushVal').textContent=e.target.value;});
+$('brushDraw').addEventListener('click',()=>{state.brushMode='draw';$('brushDraw').classList.add('primary');$('brushErase').classList.remove('primary');});
+$('brushErase').addEventListener('click',()=>{state.brushMode='erase';$('brushErase').classList.add('primary');$('brushDraw').classList.remove('primary');});
+$('clearMask').addEventListener('click',()=>{maskCtx.clearRect(0,0,W,H);draw();});
+let painting=false;
+function paintAt(e){
+  const rect=maskC.getBoundingClientRect(), sx=W/rect.width, sy=H/rect.height;
+  const x=(e.clientX-rect.left)*sx, y=(e.clientY-rect.top)*sy;
+  maskCtx.globalCompositeOperation=state.brushMode==='erase'?'destination-out':'source-over';
+  maskCtx.fillStyle='rgba(232,86,46,.9)';
+  maskCtx.beginPath();maskCtx.arc(x,y,state.brush,0,Math.PI*2);maskCtx.fill();
+}
+maskC.addEventListener('pointerdown',e=>{if(state.zone!=='mask')return;painting=true;paintAt(e);});
+maskC.addEventListener('pointermove',e=>{if(painting)paintAt(e);});
+window.addEventListener('pointerup',()=>{if(painting){painting=false;draw();}});
+
+// colors — background
+function syncBg(hex){if(validHex(hex)){state.bg=hex;$('bgColor').value=hex.length===4?'#'+hex.slice(1).split('').map(c=>c+c).join(''):hex;$('bgHex').value=hex;draw();commit();}}
+$('bgColor').addEventListener('input',e=>{state.bg=e.target.value;$('bgHex').value=e.target.value;draw();commit();});
+$('bgHex').addEventListener('input',e=>syncBg(e.target.value));
+$('bgTransparent').addEventListener('change',e=>{state.bgTransparent=e.target.checked;draw();commit();});
+
+// colors — palette (bigger rows w/ hex)
+function renderPalette(){
+  const box=$('palette'); box.innerHTML='';
+  state.palette.forEach((col,i)=>{
+    const row=document.createElement('div'); row.className='pal-row';
+    const pick=document.createElement('input'); pick.type='color'; pick.value=/^#([0-9a-f]{6})$/i.test(col)?col:'#000000';
+    const hex=document.createElement('input'); hex.type='text'; hex.className='hex'; hex.value=col;
+    const del=document.createElement('button'); del.className='del'; del.textContent='×'; del.title='Remove';
+    pick.addEventListener('input',()=>{state.palette[i]=pick.value;hex.value=pick.value;draw();commit();});
+    hex.addEventListener('input',()=>{if(validHex(hex.value)){state.palette[i]=hex.value;if(/^#[0-9a-f]{6}$/i.test(hex.value))pick.value=hex.value;draw();commit();}});
+    del.addEventListener('click',()=>{if(state.palette.length>1){state.palette.splice(i,1);renderPalette();draw();commit();}});
+    row.append(pick,hex,del); box.appendChild(row);
+  });
+}
+function addColor(){
+  let v=$('newHex').value.trim();
+  if(!validHex(v)) v=$('newColor').value;
+  state.palette.push(v); renderPalette(); draw(); commit();
+}
+$('addColor').addEventListener('click',addColor);
+$('newColor').addEventListener('input',e=>$('newHex').value=e.target.value);
+$('newHex').addEventListener('input',e=>{if(/^#[0-9a-f]{6}$/i.test(e.target.value))$('newColor').value=e.target.value;});
+$('newHex').addEventListener('keydown',e=>{if(e.key==='Enter')addColor();});
+
+// animation
+$('animate').addEventListener('change',e=>{
+  state.animate=e.target.checked;
+  $('animControls').style.display=state.animate?'block':'none';
+  $('playBtn').style.display=state.animate?'inline-block':'none';
+  updateFrameCount();draw();commit();
+});
+$('animMode').addEventListener('change',e=>{state.animMode=e.target.value;draw();commit();});
+bindSlider('speed','speed',v=>(v/100).toFixed(1)+'×',draw);
+bindSlider('intensity','intensity',v=>v+'%',draw);
+$('loop').addEventListener('input',()=>{state.loop=+$('loop').value;$('loopVal').textContent=state.loop;updateFrameCount();draw();commit();});
+$('fps').addEventListener('input',()=>{state.fps=+$('fps').value;updateFrameCount();commit();});
+function updateFrameCount(){$('frameCount').textContent=state.animate?`${Math.round(state.loop*state.fps)} frames`:'—';}
+
+// seed / reroll
+bindSlider('seed','seed',v=>v,rebuild);
+$('reroll').addEventListener('click',()=>{state.seed=Math.floor(Math.random()*9999)+1;setSlider('seed',state.seed);rebuild();commit();});
+$('playBtn').addEventListener('click',()=>{startTime=performance.now();if(!rafId)draw();});
+
+// undo / reset / surprise
+$('undoBtn').addEventListener('click',undo);
+$('resetBtn').addEventListener('click',()=>{
+  snapshot();
+  state=structuredClone(DEFAULTS);
+  sourceImg=null; sampled=null; $('imgStatus').textContent='No image loaded. Uploads stay on your machine.';
+  maskCtx.clearRect(0,0,W,H);
+  syncUIFromState(); rebuild();
+});
+$('surpriseBtn').addEventListener('click',()=>{
+  snapshot();
+  const rnd=(a,b)=>a+Math.random()*(b-a);
+  const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
+  const sets=['/ \\ < > -','• ◦ ● ○','0 1','A B C D E F','↑ ↗ → ↘ ↓ ↙ ← ↖','+ × ÷ = ≈ ∞','| — · :','◜ ◝ ◞ ◟'];
+  const bgs=['#efece4','#14140f','#f5f2ea','#1a2b3a','#2a2118','#0d0d0d','#e8e2d0'];
+  const darks=['#2b2b28','#1a1a17','#3a3632','#222'];
+  const accents=['#e8562e','#c9a6e8','#3b82c4','#e0b23a','#d4537e','#5dcaa5','#ff6b35'];
+  state.mode='generative';
+  state.glyphs=parseGlyphs(pick(sets));
+  state.fontKey=pick(['mono','mono','sans']);
+  state.weight=pick(['300','400','400','700']);
+  state.lockGrid=false;
+  state.cols=Math.round(rnd(10,60)); state.rows=Math.round(rnd(6,32));
+  state.density=Math.round(rnd(25,85));
+  state.size=Math.round(rnd(20,70));
+  state.sizeJit=Math.round(rnd(0,60)); state.posJit=Math.round(rnd(0,50)); state.rotJit=Math.round(rnd(0,40));
+  const bg=pick(bgs); state.bg=bg; state.bgTransparent=false;
+  const dark = parseInt(bg.slice(1),16) < 0x888888; // dark bg => light glyphs
+  const base = dark ? ['#e9e6dc','#c9c6bc','#efece4'] : darks;
+  const pal=[]; const nBase=Math.round(rnd(3,5));
+  for(let i=0;i<nBase;i++) pal.push(pick(base));
+  const nAcc=Math.round(rnd(1,2)); for(let i=0;i<nAcc;i++) pal.push(pick(accents));
+  state.palette=pal;
+  state.zone='full';
+  state.animate=Math.random()<0.5;
+  state.animMode=pick(['flicker','shuffle','drift','typewriter']);
+  state.speed=Math.round(rnd(40,200)); state.intensity=Math.round(rnd(30,90)); state.loop=Math.round(rnd(2,8));
+  state.seed=Math.floor(Math.random()*9999)+1;
+  syncUIFromState(); rebuild();
+});
+
+// zoom / fit
+const scaleEl=$('canvas-scale'); let zoom=1;
+function fit(){const wrap=$('canvas-wrap'),pad=48;zoom=Math.min((wrap.clientWidth-pad)/W,(wrap.clientHeight-pad)/H);applyZoom();}
+function applyZoom(){scaleEl.style.width=W*zoom+'px';scaleEl.style.height=H*zoom+'px';[main,maskC].forEach(cv=>{cv.style.width=W*zoom+'px';cv.style.height=H*zoom+'px';});$('zoomPill').textContent='Zoom '+Math.round(zoom*100)+'%';}
+$('fitBtn').addEventListener('click',fit); window.addEventListener('resize',fit);
+
+// keyboard undo
+window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();undo();}});
+
+// ============================================================
+//  Export
+// ============================================================
+function download(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);}
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// static items for SVG/JSON (t=0, no animation offsets except base)
+function collectItems(){
+  const items=[]; const ascii=state.mode==='ascii'&&sampled;
+  const ramp=state.ramp.length?state.ramp:' .';
+  for(const cell of cells){
+    if(cell.rFill*100>=state.density) continue;
+    const jx=cell.rPx*(state.posJit/100)*cell.cw*0.5, jy=cell.rPy*(state.posJit/100)*cell.ch*0.5;
+    const x=cell.cx+jx, y=cell.cy+jy; if(!inZone(x,y)) continue;
+    const size=state.size*(1+cell.rSize*(state.sizeJit/100)-(state.sizeJit/200));
+    let glyph,color;
+    if(ascii){
+      const idx=cell.r*sampled.cols+cell.c, b=sampled.lum[idx];
+      let t=state.invert?b:1-b; let ri=Math.max(0,Math.min(ramp.length-1,Math.round(t*(ramp.length-1))));
+      glyph=ramp[ri]; if(glyph===' ')continue;
+      color=state.useImgColors?`rgb(${sampled.rgb[idx*3]},${sampled.rgb[idx*3+1]},${sampled.rgb[idx*3+2]})`:(state.palette[Math.floor(cell.rColor*state.palette.length)]||'#000');
+    }else{
+      glyph=state.glyphs[Math.floor(cell.rGlyph*state.glyphs.length)]||'?';
+      color=state.palette[Math.floor(cell.rColor*state.palette.length)]||'#000';
+    }
+    const rot=cell.rRot*state.rotJit;
+    items.push({x:+x.toFixed(2),y:+y.toFixed(2),size:+size.toFixed(2),glyph,color,rotation:+rot.toFixed(2)});
+  }
+  return items;
+}
+$('exSVG').addEventListener('click',()=>{
+  const fam=FONT_STACKS[state.fontKey].split(',')[0].replace(/"/g,'');
+  const items=collectItems();
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">\n`;
+  if(!state.bgTransparent) svg+=`<rect width="${W}" height="${H}" fill="${state.bg}"/>\n`;
+  for(const it of items){const tr=it.rotation?` transform="rotate(${it.rotation} ${it.x} ${it.y})"`:'';svg+=`<text x="${it.x}" y="${it.y}" font-family="${fam}" font-weight="${state.weight}" font-size="${it.size}" fill="${it.color}" text-anchor="middle" dominant-baseline="central"${tr}>${esc(it.glyph)}</text>\n`;}
+  svg+='</svg>';
+  download(new Blob([svg],{type:'image/svg+xml'}),'glyph-grid.svg');
+});
+$('exPNG').addEventListener('click',()=>{
+  const scale=2, off=document.createElement('canvas'); off.width=W*scale; off.height=H*scale;
+  const octx=off.getContext('2d'); octx.scale(scale,scale);
+  const wasAnim=state.animate; state.animate=false;
+  drawScene(octx,0,false); state.animate=wasAnim;
+  off.toBlob(b=>download(b,'glyph-grid@2x.png'),'image/png');
+});
+$('exJSON').addEventListener('click',()=>{
+  const data={canvas:{width:W,height:H},mode:state.mode,background:state.bgTransparent?null:state.bg,font:{family:FONT_STACKS[state.fontKey].split(',')[0].replace(/"/g,''),weight:state.weight},seed:state.seed,items:collectItems()};
+  download(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'glyph-grid.json');
+});
+$('exSeq').addEventListener('click',async()=>{
+  if(!state.animate){alert('Turn on "Dynamic mode" to export a sequence.');return;}
+  const btn=$('exSeq'),orig=btn.textContent;btn.disabled=true;
+  const fps=state.fps,dur=state.loop,total=Math.round(fps*dur);
+  const zip=new JSZip(), off=document.createElement('canvas');off.width=W;off.height=H;const octx=off.getContext('2d');
+  for(let f=0;f<total;f++){
+    drawScene(octx,f/fps,false);
+    btn.textContent=`Frame ${f+1}/${total}…`;
+    const blob=await new Promise(r=>off.toBlob(r,'image/png'));
+    zip.file(`frame_${String(f).padStart(4,'0')}.png`,await blob.arrayBuffer());
+    await new Promise(r=>setTimeout(r,0));
+  }
+  btn.textContent='Zipping…';
+  download(await zip.generateAsync({type:'blob'}),`glyph-sequence_${fps}fps.zip`);
+  btn.textContent=orig;btn.disabled=false;
+});
+$('saveProj').addEventListener('click',()=>{download(new Blob([JSON.stringify({state,mask:maskC.toDataURL()})],{type:'application/json'}),'glyph-project.json');});
+$('loadProj').addEventListener('click',()=>$('projFile').click());
+$('projFile').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return; const rd=new FileReader();
+  rd.onload=()=>{try{const p=JSON.parse(rd.result);state=Object.assign(structuredClone(DEFAULTS),p.state);syncUIFromState();if(p.mask){const img=new Image();img.onload=()=>{maskCtx.clearRect(0,0,W,H);maskCtx.drawImage(img,0,0);rebuild();};img.src=p.mask;}else rebuild();}catch(err){alert('Could not load project: '+err.message);}};
+  rd.readAsText(f);
+});
+
+// ---------- sync all controls from state ----------
+function syncUIFromState(){
+  // mode
+  document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.m===state.mode));
+  const isAscii=state.mode==='ascii';
+  $('asciiControls').style.display=isAscii?'block':'none';
+  $('glyphRow').style.display=isAscii?'none':'block';
+  $('presetRow').style.display=isAscii?'none':'block';
+  $('ramp').value=state.ramp; $('invert').checked=state.invert; $('useImgColors').checked=state.useImgColors;
+  // content
+  $('glyphs').value=state.glyphs.join(' ');
+  $('fontFamily').value=state.fontKey;
+  document.querySelectorAll('#weightSeg button').forEach(b=>b.classList.toggle('on',b.dataset.w===state.weight));
+  // grid
+  $('lockGrid').checked=state.lockGrid; $('spacingRow').style.display=state.lockGrid?'block':'none';
+  $('cols').disabled=state.lockGrid; $('rows').disabled=state.lockGrid;
+  setSlider('spacing',state.spacing,v=>(v/100).toFixed(2));
+  setSlider('cols',state.cols); setSlider('rows',state.rows);
+  setSlider('density',state.density,v=>v+'%'); setSlider('size',state.size,v=>v+'px');
+  setSlider('sizeJit',state.sizeJit,v=>v+'%'); setSlider('posJit',state.posJit,v=>v+'%'); setSlider('rotJit',state.rotJit);
+  // zone
+  document.querySelectorAll('#zoneSeg button').forEach(b=>b.classList.toggle('on',b.dataset.z===state.zone));
+  $('ellipseControls').style.display=state.zone==='ellipse'?'block':'none';
+  $('maskControls').style.display=state.zone==='mask'?'block':'none';
+  $('app').classList.toggle('mask-mode',state.zone==='mask');
+  setSlider('ezx',state.ez.x,v=>v+'%');setSlider('ezy',state.ez.y,v=>v+'%');setSlider('ezw',state.ez.w,v=>v+'%');setSlider('ezh',state.ez.h,v=>v+'%');
+  // colors
+  if(/^#[0-9a-f]{6}$/i.test(state.bg))$('bgColor').value=state.bg; $('bgHex').value=state.bg; $('bgTransparent').checked=state.bgTransparent;
+  renderPalette();
+  // anim
+  $('animate').checked=state.animate; $('animControls').style.display=state.animate?'block':'none'; $('playBtn').style.display=state.animate?'inline-block':'none';
+  $('animMode').value=state.animMode;
+  setSlider('speed',state.speed,v=>(v/100).toFixed(1)+'×'); setSlider('intensity',state.intensity,v=>v+'%'); setSlider('loop',state.loop);
+  $('fps').value=state.fps; updateFrameCount();
+  setSlider('seed',state.seed);
+}
+
+// ---------- init ----------
+snapshot();
+renderPalette();
+syncUIFromState();
+buildCells();
+fit();
+draw();
+</script>
+</body>
+</html>

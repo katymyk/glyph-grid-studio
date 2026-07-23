@@ -2,9 +2,7 @@
 
 A browser-based tool for generating typographic and ASCII visuals on a 1920×1080 canvas. Distribute symbols or text across a configurable grid, define spawn zones, animate them, and export to formats that drop straight into Figma and After Effects.
 
-**[→ Open the live tool](https://YOUR-USERNAME.github.io/glyph-grid-studio/)**
-
-> Replace `YOUR-USERNAME` above with your GitHub username once the repo is live.
+**[→ Open the live tool](https://katymyk.github.io/glyph-grid-studio/)**
 
 ![Glyph Grid Studio](docs/preview.png)
 

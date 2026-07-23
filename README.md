@@ -4,7 +4,7 @@ A browser-based tool for generating typographic and ASCII visuals on a 1920×108
 
 **[→ Open the live tool](https://katymyk.github.io/glyph-grid-studio/)**
 
-![Glyph Grid Studio](docs/preview.png)
+![Glyph Grid Studio](doc/preview.png)
 
 ## What it does
 

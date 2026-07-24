@@ -36,6 +36,26 @@ export function ramp<T>(
   };
 }
 
+/** Make an animated param seeded with one keyframe at time t. */
+export function keyframed<T>(value: T, t: number, easing: Easing = 'easeInOut'): Param<T> {
+  return { kind: 'keys', keys: [{ t, value, easing }] };
+}
+
+/** Add or update a keyframe at time t (const params become keyframed). */
+export function withKeyframe<T>(p: Param<T>, t: number, value: T, easing: Easing = 'easeInOut'): Param<T> {
+  const keys = p.kind === 'keys' ? p.keys.map((k) => ({ ...k })) : [];
+  const i = keys.findIndex((k) => Math.abs(k.t - t) < 1e-3);
+  if (i >= 0) keys[i].value = value;
+  else keys.push({ t, value, easing });
+  keys.sort((a, b) => a.t - b.t);
+  return { kind: 'keys', keys };
+}
+
+/** Collapse an animated param back to a constant, frozen at time t. */
+export function flatten<T>(p: Param<T>, t: number): Param<T> {
+  return { kind: 'const', value: resolveParam(p, t) };
+}
+
 /** Resolve a param's value at time t. Numbers interpolate; other types step. */
 export function resolveParam<T>(p: Param<T>, t: number): T {
   if (p.kind === 'const') return p.value;

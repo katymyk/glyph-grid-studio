@@ -250,6 +250,67 @@
   grid-template-columns: 1fr 1fr 1fr;
   gap: 6px;
 }
+
+/* keyframe toggle (on a control) */
+.kf {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--line);
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+}
+.kf:hover {
+  color: var(--muted);
+}
+.kfOn {
+  color: var(--accent);
+}
+
+/* transport bar */
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  flex: 0 0 auto;
+}
+.transportBtn {
+  width: 34px;
+  height: 28px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.transportTime {
+  font-family: var(--diamono);
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.transportDur {
+  width: 64px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-family: var(--diamono);
+  font-size: 11px;
+}
+.transportRange {
+  flex: 1;
+  accent-color: var(--accent);
+}
 .numberInput {
   width: 100%;
   background: var(--panel-2);

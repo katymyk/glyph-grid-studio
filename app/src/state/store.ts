@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { konst, type Param } from '../domain/params';
+import { konst, keyframed, withKeyframe, flatten, resolveParam, type Param } from '../domain/params';
 import { defaultScene } from '../domain/defaults';
 import type { Scene, SpawnZone } from '../domain/scene';
 import { getMode } from '../engine/modes';
@@ -9,20 +9,41 @@ import { parseGlyphs } from '../lib/glyphs';
 interface StudioState {
   scene: Scene;
   playhead: number;
+  playing: boolean;
   imageVersion: number;
   past: Scene[];
   future: Scene[];
 
   setConstParam: (layerId: string, key: string, value: unknown) => void;
+  toggleParamAnimated: (layerId: string, key: string, t: number) => void;
+  upsertKeyframe: (layerId: string, key: string, t: number, value: unknown) => void;
   setLayerMode: (layerId: string, mode: string) => void;
   setSpawn: (layerId: string, spawn: SpawnZone) => void;
   setBackground: (bg: string | null) => void;
   setCanvasSize: (width: number, height: number) => void;
+  setDuration: (d: number) => void;
   setPlayhead: (t: number) => void;
+  play: () => void;
+  pause: () => void;
   undo: () => void;
   redo: () => void;
   reset: () => void;
   surprise: () => void;
+}
+
+/** Return a new scene with one layer param transformed by fn. */
+function withParam(
+  scene: Scene,
+  layerId: string,
+  key: string,
+  fn: (p: Param<unknown>) => Param<unknown>,
+): Scene {
+  return {
+    ...scene,
+    layers: scene.layers.map((l) =>
+      l.id === layerId ? { ...l, params: { ...l.params, [key]: fn(l.params[key]) } } : l,
+    ),
+  };
 }
 
 const HISTORY_MAX = 80;
@@ -81,6 +102,7 @@ function surpriseScene(scene: Scene): Scene {
 export const useStudio = create<StudioState>((set, get) => ({
   scene: defaultScene(),
   playhead: 0,
+  playing: false,
   imageVersion: 0,
   past: [],
   future: [],
@@ -95,6 +117,26 @@ export const useStudio = create<StudioState>((set, get) => ({
           l.id === layerId ? { ...l, params: { ...l.params, [key]: konst(value) } } : l,
         ),
       },
+    }));
+  },
+
+  // Toggle a param between constant and animated (keyframed at the playhead).
+  toggleParamAnimated: (layerId, key, t) => {
+    recordNow(get().scene);
+    set((s) => ({
+      future: [],
+      scene: withParam(s.scene, layerId, key, (p) =>
+        p.kind === 'keys' ? flatten(p, t) : keyframed(resolveParam(p, t), t),
+      ),
+    }));
+  },
+
+  // Add/update a keyframe at the playhead (used when editing an animated param).
+  upsertKeyframe: (layerId, key, t, value) => {
+    scheduleRecord(get().scene);
+    set((s) => ({
+      future: [],
+      scene: withParam(s.scene, layerId, key, (p) => withKeyframe(p, t, value)),
     }));
   },
 
@@ -132,7 +174,14 @@ export const useStudio = create<StudioState>((set, get) => ({
     set((s) => ({ future: [], scene: { ...s.scene, width, height } }));
   },
 
+  setDuration: (d) => {
+    scheduleRecord(get().scene);
+    set((s) => ({ future: [], scene: { ...s.scene, duration: Math.max(0.1, d) } }));
+  },
+
   setPlayhead: (t) => set({ playhead: t }),
+  play: () => set({ playing: true }),
+  pause: () => set({ playing: false }),
 
   undo: () => {
     flushHistory();

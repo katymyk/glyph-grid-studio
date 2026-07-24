@@ -14,9 +14,15 @@ import type { Control, PanelDef } from './types';
  * which widget a kind uses (or add a new kind), edit/register here — nothing else
  * in the app changes. This is the swap point for logic-of-a-control.
  */
-type RenderArgs = { control: Control; value: unknown; onChange: (v: unknown) => void };
+type RenderArgs = {
+  control: Control;
+  value: unknown;
+  onChange: (v: unknown) => void;
+  animated?: boolean;
+  onToggleAnimate?: () => void;
+};
 const registry: Record<string, (a: RenderArgs) => ReactNode> = {
-  slider: ({ control, value, onChange }) => {
+  slider: ({ control, value, onChange, animated, onToggleAnimate }) => {
     const c = control as Extract<Control, { kind: 'slider' }>;
     return (
       <ControlSlider
@@ -27,6 +33,8 @@ const registry: Record<string, (a: RenderArgs) => ReactNode> = {
         format={c.format}
         value={typeof value === 'number' ? value : c.min}
         onChange={onChange}
+        animated={animated}
+        onToggleAnimate={onToggleAnimate}
       />
     );
   },
@@ -61,13 +69,29 @@ function useParamValue(layerId: string, param: string): unknown {
   });
 }
 
-/** Renders one control by looking its kind up in the registry and wiring it to the store. */
+/** Renders one control from the registry, wired to the store. When the param is
+    animated, edits upsert a keyframe at the playhead instead of a constant. */
 export function ControlView({ layerId, control }: { layerId: string; control: Control }) {
   const setConstParam = useStudio((s) => s.setConstParam);
+  const upsertKeyframe = useStudio((s) => s.upsertKeyframe);
+  const toggleParamAnimated = useStudio((s) => s.toggleParamAnimated);
+  const playhead = useStudio((s) => s.playhead);
+  const animated = useStudio((s) => {
+    const l = s.scene.layers.find((x) => x.id === layerId);
+    return l ? (l.params[control.param] as Param<unknown> | undefined)?.kind === 'keys' : false;
+  });
   const value = useParamValue(layerId, control.param);
   const render = registry[control.kind];
   if (!render) return null;
-  return <>{render({ control, value, onChange: (v) => setConstParam(layerId, control.param, v) })}</>;
+
+  const onChange = (v: unknown) => {
+    if (animated) upsertKeyframe(layerId, control.param, playhead, v);
+    else setConstParam(layerId, control.param, v);
+  };
+  const onToggleAnimate =
+    control.kind === 'slider' ? () => toggleParamAnimated(layerId, control.param, playhead) : undefined;
+
+  return <>{render({ control, value, onChange, animated, onToggleAnimate })}</>;
 }
 
 /** Renders a whole panel (header + its controls) from a PanelDef. */

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Stage } from './canvas/Stage';
+import { Transport } from './panels/Transport';
 import { panelsForMode } from './panels/schema';
 import { ActionsBar } from './panels/ActionsBar';
 import { ModePanel } from './panels/ModePanel';
@@ -69,7 +70,10 @@ export function App() {
         </div>
       </aside>
 
-      <Stage />
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <Stage />
+        <Transport />
+      </main>
     </div>
   );
 }

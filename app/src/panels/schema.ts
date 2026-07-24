@@ -49,11 +49,11 @@ const generativePanels: PanelDef[] = [
     controls: [
       { kind: 'slider', param: 'cols', label: 'Columns', min: 4, max: 240 },
       { kind: 'slider', param: 'rows', label: 'Rows', min: 3, max: 140 },
-      { kind: 'slider', param: 'density', label: 'Cell fill', min: 1, max: 100, format: (v) => `${v}%` },
-      { kind: 'slider', param: 'size', label: 'Symbol size', min: 6, max: 200, format: (v) => `${v}px` },
-      { kind: 'slider', param: 'sizeJit', label: 'Size jitter', min: 0, max: 100, format: (v) => `${v}%` },
-      { kind: 'slider', param: 'posJit', label: 'Position jitter', min: 0, max: 100, format: (v) => `${v}%` },
-      { kind: 'slider', param: 'rotJit', label: 'Rotation', min: 0, max: 90, format: (v) => `${v}°` },
+      { kind: 'slider', param: 'density', label: 'Cell fill', min: 1, max: 100, format: (v) => `${Math.round(v)}%` },
+      { kind: 'slider', param: 'size', label: 'Symbol size', min: 6, max: 200, format: (v) => `${Math.round(v)}px` },
+      { kind: 'slider', param: 'sizeJit', label: 'Size jitter', min: 0, max: 100, format: (v) => `${Math.round(v)}%` },
+      { kind: 'slider', param: 'posJit', label: 'Position jitter', min: 0, max: 100, format: (v) => `${Math.round(v)}%` },
+      { kind: 'slider', param: 'rotJit', label: 'Rotation', min: 0, max: 90, format: (v) => `${Math.round(v)}°` },
     ],
   },
 ];
@@ -90,8 +90,8 @@ const asciiPanels: PanelDef[] = [
     controls: [
       { kind: 'slider', param: 'cols', label: 'Columns', min: 8, max: 400 },
       { kind: 'slider', param: 'rows', label: 'Rows', min: 6, max: 300 },
-      { kind: 'slider', param: 'density', label: 'Cell fill', min: 1, max: 100, format: (v) => `${v}%` },
-      { kind: 'slider', param: 'size', label: 'Symbol size', min: 4, max: 80, format: (v) => `${v}px` },
+      { kind: 'slider', param: 'density', label: 'Cell fill', min: 1, max: 100, format: (v) => `${Math.round(v)}%` },
+      { kind: 'slider', param: 'size', label: 'Symbol size', min: 4, max: 80, format: (v) => `${Math.round(v)}px` },
     ],
   },
 ];

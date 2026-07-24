@@ -8,6 +8,7 @@ export interface Sample {
   rows: number;
   lum: Float32Array;
   rgb: Uint8ClampedArray;
+  alpha: Uint8ClampedArray;
 }
 
 const imgCache = new Map<string, HTMLImageElement>();
@@ -55,6 +56,7 @@ function sampleImage(img: HTMLImageElement, cols: number, rows: number): Sample 
   const data = octx.getImageData(0, 0, cols, rows).data;
   const lum = new Float32Array(cols * rows);
   const rgb = new Uint8ClampedArray(cols * rows * 3);
+  const alpha = new Uint8ClampedArray(cols * rows);
   for (let i = 0; i < cols * rows; i++) {
     const R = data[i * 4];
     const G = data[i * 4 + 1];
@@ -63,8 +65,9 @@ function sampleImage(img: HTMLImageElement, cols: number, rows: number): Sample 
     rgb[i * 3] = R;
     rgb[i * 3 + 1] = G;
     rgb[i * 3 + 2] = B;
+    alpha[i] = data[i * 4 + 3];
   }
-  return { cols, rows, lum, rgb };
+  return { cols, rows, lum, rgb, alpha };
 }
 
 /**

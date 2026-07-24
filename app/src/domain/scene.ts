@@ -4,7 +4,8 @@ import type { Param } from './params';
     produces placements, so every mode + export respects it uniformly. */
 export type SpawnZone =
   | { kind: 'full' }
-  | { kind: 'image'; image: string | null; invert: boolean };
+  | { kind: 'image'; image: string | null; invert: boolean }
+  | { kind: 'brush'; mask: string | null; invert: boolean };
 
 /** A layer applies one render mode with its own animatable params. */
 export interface Layer {

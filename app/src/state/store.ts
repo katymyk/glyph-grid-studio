@@ -14,6 +14,16 @@ interface StudioState {
   past: Scene[];
   future: Scene[];
 
+  // view / interaction state (not part of the scene document, not undoable)
+  showGrid: boolean;
+  brushSize: number;
+  brushErase: boolean;
+  maskVisible: boolean;
+  toggleGrid: () => void;
+  setBrushSize: (v: number) => void;
+  setBrushErase: (v: boolean) => void;
+  setMaskVisible: (v: boolean) => void;
+
   setConstParam: (layerId: string, key: string, value: unknown) => void;
   toggleParamAnimated: (layerId: string, key: string, t: number) => void;
   upsertKeyframe: (layerId: string, key: string, t: number, value: unknown) => void;
@@ -107,6 +117,15 @@ export const useStudio = create<StudioState>((set, get) => ({
   imageVersion: 0,
   past: [],
   future: [],
+
+  showGrid: false,
+  brushSize: 80,
+  brushErase: false,
+  maskVisible: true,
+  toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
+  setBrushSize: (v) => set({ brushSize: v }),
+  setBrushErase: (v) => set({ brushErase: v }),
+  setMaskVisible: (v) => set({ maskVisible: v }),
 
   setConstParam: (layerId, key, value) => {
     scheduleRecord(get().scene);

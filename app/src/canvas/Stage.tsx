@@ -1,45 +1,136 @@
 import { useEffect, useRef } from 'react';
 import { paintScene } from '../engine/paint';
+import { resolveParam, type Param } from '../domain/params';
 import { useStudio } from '../state/store';
 
-/** The canvas surface. Backing store is always scene.width × height (full-res);
-    it's scaled with CSS to fit the viewport, preserving aspect. */
+/** Canvas surface: main artwork canvas + a brush-mask overlay, both scaled to fit. */
 export function Stage() {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLCanvasElement>(null);
+  const maskRef = useRef<HTMLCanvasElement>(null);
+
   const scene = useStudio((s) => s.scene);
   const playhead = useStudio((s) => s.playhead);
   const imageVersion = useStudio((s) => s.imageVersion);
+  const showGrid = useStudio((s) => s.showGrid);
+  const brushSize = useStudio((s) => s.brushSize);
+  const brushErase = useStudio((s) => s.brushErase);
+  const maskVisible = useStudio((s) => s.maskVisible);
+  const setSpawn = useStudio((s) => s.setSpawn);
 
-  // repaint when the scene, playhead, or a decoded image changes
+  const layer = scene.layers[0];
+  const spawn = layer.spawn;
+  const brushActive = spawn.kind === 'brush';
+  const brushMask = spawn.kind === 'brush' ? spawn.mask : null;
+  const spawnInvert = spawn.kind === 'brush' ? spawn.invert : false;
+
+  // paint artwork + optional grid guide (guide is live-only; exports use paintScene alone)
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    if (canvas.width !== scene.width) canvas.width = scene.width;
-    if (canvas.height !== scene.height) canvas.height = scene.height;
-    const ctx = canvas.getContext('2d');
+    const c = mainRef.current;
+    if (!c) return;
+    if (c.width !== scene.width) c.width = scene.width;
+    if (c.height !== scene.height) c.height = scene.height;
+    const ctx = c.getContext('2d');
     if (!ctx) return;
     paintScene(ctx, scene, playhead);
-  }, [scene, playhead, imageVersion]);
+    if (showGrid) {
+      const cols = Number(resolveParam(layer.params.cols as Param<number>, playhead));
+      const rows = Number(resolveParam(layer.params.rows as Param<number>, playhead));
+      if (cols > 0 && rows > 0) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(120,120,120,.28)';
+        ctx.lineWidth = 1;
+        const cw = scene.width / cols;
+        const ch = scene.height / rows;
+        for (let i = 1; i < cols; i++) {
+          ctx.beginPath();
+          ctx.moveTo(i * cw, 0);
+          ctx.lineTo(i * cw, scene.height);
+          ctx.stroke();
+        }
+        for (let j = 1; j < rows; j++) {
+          ctx.beginPath();
+          ctx.moveTo(0, j * ch);
+          ctx.lineTo(scene.width, j * ch);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+  }, [scene, playhead, imageVersion, showGrid, layer]);
 
-  // fit-to-viewport: scale the canvas (CSS) to fill the stage, preserving aspect
+  // keep the mask canvas backing sized to the scene
+  useEffect(() => {
+    const m = maskRef.current;
+    if (!m) return;
+    if (m.width !== scene.width) m.width = scene.width;
+    if (m.height !== scene.height) m.height = scene.height;
+  }, [scene.width, scene.height]);
+
+  // (re)load the mask overlay from spawn.mask on external changes (undo/clear/switch)
+  const lastMaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    const m = maskRef.current;
+    if (!m) return;
+    if (brushMask === lastMaskRef.current) return; // our own commit — skip
+    const ctx = m.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, m.width, m.height);
+    if (brushMask) {
+      const img = new Image();
+      img.onload = () => {
+        ctx.clearRect(0, 0, m.width, m.height);
+        ctx.drawImage(img, 0, 0, m.width, m.height);
+      };
+      img.src = brushMask;
+    }
+    lastMaskRef.current = brushMask;
+  }, [brushMask]);
+
+  // fit the scale box to the viewport, preserving aspect
   useEffect(() => {
     const wrap = wrapRef.current;
-    const canvas = canvasRef.current;
-    if (!wrap || !canvas) return;
+    const box = boxRef.current;
+    if (!wrap || !box) return;
     const fit = () => {
       const pad = 48;
-      const availW = Math.max(1, wrap.clientWidth - pad);
-      const availH = Math.max(1, wrap.clientHeight - pad);
-      const scale = Math.min(availW / scene.width, availH / scene.height);
-      canvas.style.width = `${Math.round(scene.width * scale)}px`;
-      canvas.style.height = `${Math.round(scene.height * scale)}px`;
+      const aw = Math.max(1, wrap.clientWidth - pad);
+      const ah = Math.max(1, wrap.clientHeight - pad);
+      const sc = Math.min(aw / scene.width, ah / scene.height);
+      box.style.width = `${Math.round(scene.width * sc)}px`;
+      box.style.height = `${Math.round(scene.height * sc)}px`;
     };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(wrap);
     return () => ro.disconnect();
   }, [scene.width, scene.height]);
+
+  // brush painting
+  const painting = useRef(false);
+  const paintAt = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const m = maskRef.current;
+    if (!m) return;
+    const rect = m.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) * scene.width) / rect.width;
+    const y = ((e.clientY - rect.top) * scene.height) / rect.height;
+    const ctx = m.getContext('2d');
+    if (!ctx) return;
+    ctx.globalCompositeOperation = brushErase ? 'destination-out' : 'source-over';
+    ctx.fillStyle = 'rgba(232,86,46,.95)';
+    ctx.beginPath();
+    ctx.arc(x, y, brushSize, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  };
+  const commit = () => {
+    const m = maskRef.current;
+    if (!m) return;
+    const url = m.toDataURL();
+    lastMaskRef.current = url;
+    setSpawn(layer.id, { kind: 'brush', mask: url, invert: spawnInvert });
+  };
 
   return (
     <div
@@ -50,11 +141,39 @@ export function Stage() {
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'hidden',
-        background:
-          'repeating-conic-gradient(#191914 0% 25%, #14140f 0% 50%) 50% / 22px 22px',
+        background: 'repeating-conic-gradient(#191914 0% 25%, #14140f 0% 50%) 50% / 22px 22px',
       }}
     >
-      <canvas ref={canvasRef} style={{ boxShadow: '0 8px 40px rgba(0,0,0,.5)' }} />
+      <div ref={boxRef} style={{ position: 'relative', boxShadow: '0 8px 40px rgba(0,0,0,.5)' }}>
+        <canvas ref={mainRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
+        <canvas
+          ref={maskRef}
+          onPointerDown={(e) => {
+            if (!brushActive) return;
+            painting.current = true;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            paintAt(e);
+          }}
+          onPointerMove={(e) => {
+            if (painting.current) paintAt(e);
+          }}
+          onPointerUp={() => {
+            if (painting.current) {
+              painting.current = false;
+              commit();
+            }
+          }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            opacity: brushActive && maskVisible ? 0.5 : 0,
+            pointerEvents: brushActive ? 'auto' : 'none',
+            cursor: brushActive ? 'crosshair' : 'default',
+          }}
+        />
+      </div>
     </div>
   );
 }

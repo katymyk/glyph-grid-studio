@@ -6,6 +6,7 @@ import { ActionsBar } from './panels/ActionsBar';
 import { ModePanel } from './panels/ModePanel';
 import { AsciiImagePanel } from './panels/AsciiImagePanel';
 import { SpawnPanel } from './panels/SpawnPanel';
+import { ViewPanel } from './panels/ViewPanel';
 import { ColorsPanel } from './panels/ColorsPanel';
 import { CanvasPanel } from './panels/CanvasPanel';
 import { ExportPanel } from './panels/ExportPanel';
@@ -66,6 +67,7 @@ export function App() {
           <ColorsPanel />
           <CanvasPanel />
           <ExportPanel />
+          <ViewPanel />
           <SeedPanel />
         </div>
       </aside>

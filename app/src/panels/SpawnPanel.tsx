@@ -5,12 +5,17 @@ import { Panel } from '../ui/Panel';
 import { Segmented } from '../ui/Segmented';
 import { Toggle } from '../ui/Toggle';
 import { Button } from '../ui/Button';
+import { ControlSlider } from '../ui/ControlSlider';
 
-/** Bespoke: restrict where a layer's glyphs appear — full frame or an image mask
-    (bright areas spawn). Reuses the image-sampling infra. */
 export function SpawnPanel() {
   const scene = useStudio((s) => s.scene);
   const setSpawn = useStudio((s) => s.setSpawn);
+  const brushSize = useStudio((s) => s.brushSize);
+  const setBrushSize = useStudio((s) => s.setBrushSize);
+  const brushErase = useStudio((s) => s.brushErase);
+  const setBrushErase = useStudio((s) => s.setBrushErase);
+  const maskVisible = useStudio((s) => s.maskVisible);
+  const setMaskVisible = useStudio((s) => s.setMaskVisible);
   const layer = scene.layers[0];
   const spawn = layer.spawn;
   const fileRef = useRef<HTMLInputElement>(null);
@@ -18,9 +23,9 @@ export function SpawnPanel() {
 
   const setKind = (k: string) => {
     if (k === 'image') {
-      const image = spawn.kind === 'image' ? spawn.image : lastImage;
-      const invert = spawn.kind === 'image' ? spawn.invert : false;
-      setSpawn(layer.id, { kind: 'image', image, invert });
+      setSpawn(layer.id, { kind: 'image', image: spawn.kind === 'image' ? spawn.image : lastImage, invert: false });
+    } else if (k === 'brush') {
+      setSpawn(layer.id, { kind: 'brush', mask: spawn.kind === 'brush' ? spawn.mask : null, invert: false });
     } else {
       setSpawn(layer.id, { kind: 'full' });
     }
@@ -49,11 +54,13 @@ export function SpawnPanel() {
       <Segmented
         options={[
           { value: 'full', label: 'Full frame' },
-          { value: 'image', label: 'Image mask' },
+          { value: 'image', label: 'Image' },
+          { value: 'brush', label: 'Brush' },
         ]}
         value={spawn.kind}
         onChange={setKind}
       />
+
       {spawn.kind === 'image' && (
         <>
           <div style={{ marginTop: 10 }}>
@@ -66,9 +73,37 @@ export function SpawnPanel() {
             onChange={(v) => setSpawn(layer.id, { kind: 'image', image: spawn.image, invert: v })}
           />
           <p style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 6 }}>
-            {spawn.image
-              ? 'Mask loaded — bright areas spawn glyphs, dark areas stay empty.'
-              : 'Upload an image. Bright → glyphs, dark → empty.'}
+            {spawn.image ? 'Mask loaded — bright areas spawn glyphs.' : 'Upload an image. Bright → glyphs, dark → empty.'}
+          </p>
+        </>
+      )}
+
+      {spawn.kind === 'brush' && (
+        <>
+          <div style={{ marginTop: 10 }}>
+            <ControlSlider label="Brush size" value={brushSize} min={10} max={300} onChange={setBrushSize} />
+          </div>
+          <Segmented
+            options={[
+              { value: 'draw', label: 'Draw' },
+              { value: 'erase', label: 'Erase' },
+            ]}
+            value={brushErase ? 'erase' : 'draw'}
+            onChange={(v) => setBrushErase(v === 'erase')}
+          />
+          <Toggle label="Show mask overlay" checked={maskVisible} onChange={setMaskVisible} />
+          <Toggle
+            label="Invert mask"
+            checked={spawn.invert}
+            onChange={(v) => setSpawn(layer.id, { kind: 'brush', mask: spawn.mask, invert: v })}
+          />
+          <div style={{ marginTop: 8 }}>
+            <Button onClick={() => setSpawn(layer.id, { kind: 'brush', mask: null, invert: spawn.invert })}>
+              Clear mask
+            </Button>
+          </div>
+          <p style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 6 }}>
+            Paint on the canvas — glyphs appear only inside the painted area.
           </p>
         </>
       )}

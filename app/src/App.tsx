@@ -1,8 +1,13 @@
 import { Stage } from './canvas/Stage';
-import { ContentPanel } from './panels/ContentPanel';
-import { GridPanel } from './panels/GridPanel';
+import { panelsForMode } from './panels/schema';
+import { useStudio } from './state/store';
+import { SchemaPanel } from './ui/controls';
 
 export function App() {
+  const scene = useStudio((s) => s.scene);
+  const layer = scene.layers[0];
+  const panels = panelsForMode(layer.mode);
+
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
       <aside
@@ -26,8 +31,9 @@ export function App() {
           </p>
         </header>
         <div style={{ overflowY: 'auto', flex: 1 }}>
-          <ContentPanel />
-          <GridPanel />
+          {panels.map((def) => (
+            <SchemaPanel key={def.id} layerId={layer.id} def={def} />
+          ))}
         </div>
       </aside>
 

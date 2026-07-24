@@ -106,3 +106,29 @@
 .chip:hover {
   border-color: #4c4c3e;
 }
+
+.segment {
+  display: flex;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px;
+  gap: 3px;
+}
+.segmentItem {
+  flex: 1;
+  text-align: center;
+  padding: 7px 0;
+  font-size: 11px;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: var(--diatype);
+}
+.segmentOn {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}

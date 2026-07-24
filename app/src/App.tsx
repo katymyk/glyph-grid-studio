@@ -1,5 +1,8 @@
 import { Stage } from './canvas/Stage';
 import { panelsForMode } from './panels/schema';
+import { ColorsPanel } from './panels/ColorsPanel';
+import { CanvasPanel } from './panels/CanvasPanel';
+import { ExportPanel } from './panels/ExportPanel';
 import { useStudio } from './state/store';
 import { SchemaPanel } from './ui/controls';
 
@@ -34,6 +37,9 @@ export function App() {
           {panels.map((def) => (
             <SchemaPanel key={def.id} layerId={layer.id} def={def} />
           ))}
+          <ColorsPanel />
+          <CanvasPanel />
+          <ExportPanel />
         </div>
       </aside>
 

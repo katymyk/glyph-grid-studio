@@ -7,8 +7,11 @@ interface StudioState {
   scene: Scene;
   playhead: number; // seconds
 
-  /** Set a layer param to a constant value (temporary demo-level action). */
+  /** Set a layer param to a constant value. */
   setConstParam: (layerId: string, key: string, value: unknown) => void;
+  /** Scene-level fields. */
+  setBackground: (bg: string | null) => void;
+  setCanvasSize: (width: number, height: number) => void;
   setPlayhead: (t: number) => void;
 }
 
@@ -25,6 +28,11 @@ export const useStudio = create<StudioState>((set) => ({
         ),
       },
     })),
+
+  setBackground: (bg) => set((s) => ({ scene: { ...s.scene, background: bg } })),
+
+  setCanvasSize: (width, height) =>
+    set((s) => ({ scene: { ...s.scene, width, height } })),
 
   setPlayhead: (t) => set({ playhead: t }),
 }));

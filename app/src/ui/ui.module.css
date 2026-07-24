@@ -132,3 +132,138 @@
   color: #fff;
   font-weight: 600;
 }
+
+/* color field */
+.colorRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 7px 0;
+}
+.colorSwatch {
+  width: 40px;
+  height: 34px;
+  flex: 0 0 40px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+.hexInput {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 9px;
+  font-family: var(--diamono);
+  font-size: 12px;
+  text-transform: lowercase;
+}
+.colorRemove {
+  flex: 0 0 30px;
+  height: 34px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 15px;
+}
+.colorRemove:hover {
+  color: #fff;
+  background: #3a2420;
+  border-color: #5a3028;
+}
+
+/* switch (Base UI) */
+.switchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 0;
+}
+.switchLabel {
+  font-size: 11px;
+  color: var(--muted);
+}
+.switchTrack {
+  width: 34px;
+  height: 19px;
+  border-radius: 20px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+}
+.switchTrack[data-checked] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switchThumb {
+  display: block;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--muted);
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  transition: transform 0.12s;
+}
+.switchTrack[data-checked] .switchThumb {
+  transform: translateX(15px);
+  background: #fff;
+}
+
+/* buttons / inputs */
+.btn {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  width: 100%;
+  font-family: var(--diatype);
+}
+.btn:hover {
+  border-color: #4c4c3e;
+  background: #2e2e24;
+}
+.btnPrimary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.numberInput {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 9px;
+  font-family: var(--diamono);
+  font-size: 12px;
+}
+.select {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 9px;
+  font-family: var(--diamono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.btnGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}

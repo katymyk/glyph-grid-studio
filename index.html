@@ -107,9 +107,24 @@
               <input type="file" id="imageFile" accept="image/*" style="display:none">
               <p class="hint" id="imgStatus">No image loaded. Uploads stay on your machine.</p>
             </div>
+            <div class="row switch">
+              <label style="margin:0">Match canvas to image</label>
+              <input type="checkbox" id="asciiFitCanvas" checked>
+            </div>
             <div class="row">
               <label>Character ramp (light → dark)</label>
               <input type="text" id="ramp" value=" .:-=+*#%@">
+            </div>
+            <div class="row">
+              <label>Ramp presets</label>
+              <div class="chips" id="rampChips">
+                <span class="chip" data-ramp=" .:-=+*#%@">classic</span>
+                <span class="chip" data-ramp=" .oO0@">blocks</span>
+                <span class="chip" data-ramp=" ░▒▓█">shades</span>
+                <span class="chip" data-ramp=" .,:;irsXA253hMHGS#9B&@">detailed</span>
+                <span class="chip" data-ramp=" .·•●">dots</span>
+                <span class="chip" data-ramp=" 01">binary</span>
+              </div>
             </div>
             <div class="row switch">
               <label style="margin:0">Invert brightness</label>
@@ -119,7 +134,15 @@
               <label style="margin:0">Use image colors</label>
               <input type="checkbox" id="useImgColors">
             </div>
-            <p class="hint">Bright areas → sparse chars, dark areas → dense chars. Increase grid columns for more detail.</p>
+            <div class="row">
+              <label>Contrast <span class="val" id="contrastVal">1.00×</span></label>
+              <input type="range" id="contrast" min="20" max="300" value="100">
+            </div>
+            <div class="row">
+              <label>Brightness <span class="val" id="brightnessVal">0</span></label>
+              <input type="range" id="brightness" min="-100" max="100" value="0">
+            </div>
+            <p class="hint">Dark areas → dense chars, bright areas → sparse. Symbol size &amp; spacing set the character resolution — no need to touch columns/rows.</p>
           </div>
         </div>
       </details>
@@ -167,19 +190,20 @@
       <details class="group" open>
         <summary>Grid</summary>
         <div class="body">
-          <div class="row switch">
+          <div class="row switch" id="lockGridRow">
             <label style="margin:0">Lock grid to symbol size</label>
             <input type="checkbox" id="lockGrid">
           </div>
           <div class="row" id="spacingRow" style="display:none">
             <label>Spacing <span class="val" id="spacingVal">1.00</span></label>
-            <input type="range" id="spacing" min="50" max="200" value="100">
+            <input type="range" id="spacing" min="30" max="300" value="100">
           </div>
-          <div class="row">
+          <p class="hint" id="asciiResInfo" style="display:none">Resolution: — characters</p>
+          <div class="row" id="colsRow">
             <label>Columns <span class="val" id="colsVal">24</span></label>
             <input type="range" id="cols" min="4" max="240" value="24">
           </div>
-          <div class="row">
+          <div class="row" id="rowsRow">
             <label>Rows <span class="val" id="rowsVal">14</span></label>
             <input type="range" id="rows" min="3" max="140" value="14">
           </div>
@@ -210,6 +234,34 @@
       </details>
 
       <details class="group">
+        <summary>Canvas</summary>
+        <div class="body">
+          <div class="row">
+            <label>Preset</label>
+            <select id="canvasPreset">
+              <option value="hd" selected>1920 × 1080 — HD landscape</option>
+              <option value="vertical">1080 × 1920 — vertical</option>
+              <option value="square">1080 × 1080 — square</option>
+              <option value="uhd">3840 × 2160 — 4K</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="row" style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label>Width, px</label>
+              <input type="number" id="canvasWInput" min="100" max="8000" value="1920">
+            </div>
+            <div style="flex:1">
+              <label>Height, px</label>
+              <input type="number" id="canvasHInput" min="100" max="8000" value="1080">
+            </div>
+          </div>
+          <button class="btn small primary" id="applyCanvasSize" style="width:100%;margin-top:6px">Apply size</button>
+          <p class="hint">Changing canvas size clears the brush/image mask and refits the view. Exports always match this resolution.</p>
+        </div>
+      </details>
+
+      <details class="group">
         <summary>Spawn zone</summary>
         <div class="body">
           <div class="row">
@@ -233,6 +285,16 @@
             </div>
             <div class="row" style="margin-top:8px"><button class="btn small" id="clearMask" style="width:100%">Clear mask</button></div>
             <p class="hint">Paint directly on the frame — symbols appear only inside the painted area.</p>
+            <div class="row" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+              <label>Or use an image as the mask</label>
+              <button class="btn small" id="loadMaskImage" style="width:100%">Upload mask image</button>
+              <input type="file" id="maskImageFile" accept="image/*" style="display:none">
+              <p class="hint" id="maskImgStatus">Bright areas become spawnable; dark areas are excluded.</p>
+            </div>
+            <div class="row switch">
+              <label style="margin:0">Invert mask image</label>
+              <input type="checkbox" id="maskImgInvert">
+            </div>
           </div>
         </div>
       </details>
@@ -298,7 +360,8 @@
               <span id="frameCount" style="font-size:11px;color:var(--muted);font-family:var(--diamono)"></span>
             </div>
             <button class="btn" id="exSeq" style="margin-top:8px;width:100%">Download sequence (.zip)</button>
-            <p class="hint">Sequence works in dynamic mode. Frames export as lossless PNG at 1920×1080.</p>
+            <button class="btn" id="exGIF" style="margin-top:8px;width:100%">Export GIF (animated)</button>
+            <p class="hint">Both work in dynamic mode, looping over one animation cycle at the current fps.</p>
           </div>
           <div class="row">
             <button class="btn small" id="saveProj" style="width:100%">Save project</button>
@@ -322,8 +385,10 @@
 
   <main id="stage">
     <div id="toolbar">
-      <span class="pill">1920 × 1080</span>
-      <span class="pill" id="zoomPill">Zoom 100%</span>
+      <span class="pill" id="canvasSizePill">1920 × 1080</span>
+      <button class="btn small" id="zoomOutBtn" style="width:auto;padding:6px 10px" title="Zoom out">−</button>
+      <span class="pill" id="zoomPill" title="Click to reset to 100%" style="cursor:pointer">Zoom 100%</span>
+      <button class="btn small" id="zoomInBtn" style="width:auto;padding:6px 10px" title="Zoom in">+</button>
       <div class="sp"></div>
       <span class="status" id="status">—</span>
       <button class="btn small" id="fitBtn" style="width:auto">Fit</button>
@@ -339,9 +404,10 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
 <script>
 "use strict";
-const W=1920,H=1080;
+let W=1920,H=1080;
 const main=document.getElementById('mainCanvas'), mctx=main.getContext('2d',{willReadFrequently:false});
 const maskC=document.getElementById('maskCanvas'), maskCtx=maskC.getContext('2d',{willReadFrequently:true});
 const $=id=>document.getElementById(id);
@@ -361,12 +427,14 @@ const DEFAULTS={
   cols:24, rows:14, lockGrid:false, spacing:100,
   density:45, size:42, sizeJit:0, posJit:0, rotJit:0,
   showGrid:false,
+  canvasW:1920, canvasH:1080,
   zone:'full', ez:{x:50,y:50,w:60,h:60}, brush:80, brushMode:'draw',
   bg:'#efece4', bgTransparent:false,
   palette:['#2b2b28','#2b2b28','#2b2b28','#2b2b28','#e8562e','#c9a6e8'],
   animate:false, animMode:'flicker', speed:100, intensity:50, loop:4, fps:25,
   seed:1,
-  ramp:' .:-=+*#%@', invert:false, useImgColors:false
+  ramp:' .:-=+*#%@', invert:false, useImgColors:false,
+  asciiFitCanvas:true, contrast:100, brightness:0
 };
 let state=structuredClone(DEFAULTS);
 
@@ -375,14 +443,27 @@ let sourceImg=null;        // HTMLImageElement
 let sampled=null;          // {cols,rows,lum:Float32Array,rgb:Uint8ClampedArray}
 
 // ---------- history (undo) ----------
+// commit() must be called BEFORE state is mutated — it captures the
+// pre-change state (debounced so a slider drag makes one entry, not one per tick).
 let history=[]; const HISTORY_MAX=60;
+let pendingSnapshot=null, snapTimer=null;
 function snapshot(){
+  clearTimeout(snapTimer); pendingSnapshot=null;
   history.push(structuredClone(state));
   if(history.length>HISTORY_MAX) history.shift();
 }
-let snapTimer=null;
-function commit(){ clearTimeout(snapTimer); snapTimer=setTimeout(snapshot,250); }
+function commit(){
+  if(pendingSnapshot===null) pendingSnapshot=structuredClone(state);
+  clearTimeout(snapTimer);
+  snapTimer=setTimeout(()=>{
+    history.push(pendingSnapshot);
+    if(history.length>HISTORY_MAX) history.shift();
+    pendingSnapshot=null;
+  },250);
+}
 function undo(){
+  if(snapTimer){clearTimeout(snapTimer);snapTimer=null;}
+  if(pendingSnapshot!==null){state=pendingSnapshot;pendingSnapshot=null;syncUIFromState();rebuild();return;}
   if(history.length===0) return;
   state=history.pop();
   syncUIFromState(); rebuild();
@@ -422,6 +503,20 @@ function sampleImage(){
     rgb[i*3]=R;rgb[i*3+1]=G;rgb[i*3+2]=B;
   }
   sampled={cols:c,rows:r,lum,rgb};
+}
+
+// ---------- luminance → ramp helpers (ASCII) ----------
+// Applied at draw time (not baked into sampleImage) so contrast/brightness
+// only need a draw(), never a resample.
+function adjustLum(b){
+  const contrast=state.contrast/100, brightness=state.brightness/100;
+  let v=(b-0.5)*contrast+0.5+brightness;
+  return v<0?0:v>1?1:v;
+}
+function rampCharFor(b,ramp){
+  const t=state.invert?adjustLum(b):1-adjustLum(b);
+  let ri=Math.round(t*(ramp.length-1));
+  return ramp[ri<0?0:ri>ramp.length-1?ramp.length-1:ri];
 }
 
 // ---------- zone test ----------
@@ -471,10 +566,7 @@ function drawScene(ctx,tSec,guide){
     let glyph, color;
     if(ascii){
       const idx=cell.r*sampled.cols+cell.c;
-      const b=sampled.lum[idx];
-      let t=state.invert? b : 1-b;
-      let ri=Math.round(t*(ramp.length-1)); ri=Math.max(0,Math.min(ramp.length-1,ri));
-      glyph=ramp[ri];
+      glyph=rampCharFor(sampled.lum[idx],ramp);
       if(glyph===' ') continue; // skip empty
       if(state.useImgColors){ color=`rgb(${sampled.rgb[idx*3]},${sampled.rgb[idx*3+1]},${sampled.rgb[idx*3+2]})`; }
       else color=state.palette[Math.floor(cell.rColor*state.palette.length)]||'#000';
@@ -535,36 +627,70 @@ function parseGlyphs(str){
 function validHex(h){return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(h.trim());}
 
 // mode
+// remember "cell fill" + symbol size per mode: ASCII wants a full, fine grid by
+// default, generative wants the sparse, larger scatter — so toggling modes
+// doesn't wreck either look.
+const densityByMode={generative:DEFAULTS.density, ascii:100};
+const sizeByMode={generative:DEFAULTS.size, ascii:12};
 document.querySelectorAll('#modeSeg button').forEach(b=>b.addEventListener('click',()=>{
+  const next=b.dataset.m;
+  if(next===state.mode) return;
+  commit();
+  densityByMode[state.mode]=state.density; sizeByMode[state.mode]=state.size;
   document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on'); state.mode=b.dataset.m;
+  b.classList.add('on'); state.mode=next;
+  state.density=densityByMode[state.mode]; state.size=sizeByMode[state.mode];
+  setSlider('density',state.density,v=>v+'%'); setSlider('size',state.size,v=>v+'px');
   const isAscii=state.mode==='ascii';
   $('asciiControls').style.display=isAscii?'block':'none';
   $('glyphRow').style.display=isAscii?'none':'block';
   $('presetRow').style.display=isAscii?'none':'block';
-  commit(); rebuild();
+  refreshGridControlsForMode();
+  if(isAscii){ if(sourceImg && state.asciiFitCanvas) fitCanvasToImage(sourceImg); applyAsciiGrid(); }
+  rebuild();
+  if(isAscii && sourceImg && state.asciiFitCanvas) fit();
 }));
 $('loadImage').addEventListener('click',()=>$('imageFile').click());
 $('imageFile').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f)return;
   const url=URL.createObjectURL(f);
   const img=new Image();
-  img.onload=()=>{sourceImg=img;$('imgStatus').textContent=`Loaded: ${f.name} (${img.width}×${img.height})`;rebuild();URL.revokeObjectURL(url);};
+  img.onload=()=>{
+    commit();
+    sourceImg=img;
+    $('imgStatus').textContent=`Loaded: ${f.name} (${img.width}×${img.height})`;
+    if(state.mode==='ascii' && state.asciiFitCanvas) fitCanvasToImage(img);
+    if(state.mode==='ascii') applyAsciiGrid();
+    rebuild();
+    fit();
+    URL.revokeObjectURL(url); e.target.value='';
+  };
   img.src=url;
 });
-$('ramp').addEventListener('input',e=>{state.ramp=e.target.value;commit();draw();});
-$('invert').addEventListener('change',e=>{state.invert=e.target.checked;commit();draw();});
-$('useImgColors').addEventListener('change',e=>{state.useImgColors=e.target.checked;commit();draw();});
+$('asciiFitCanvas').addEventListener('change',e=>{
+  commit();
+  state.asciiFitCanvas=e.target.checked;
+  if(state.asciiFitCanvas && sourceImg){ fitCanvasToImage(sourceImg); applyAsciiGrid(); rebuild(); fit(); }
+});
+$('ramp').addEventListener('input',e=>{commit();state.ramp=e.target.value;draw();});
+document.querySelectorAll('#rampChips .chip').forEach(chip=>chip.addEventListener('click',()=>{
+  commit();state.ramp=chip.dataset.ramp;$('ramp').value=chip.dataset.ramp;draw();
+}));
+$('invert').addEventListener('change',e=>{commit();state.invert=e.target.checked;draw();});
+$('useImgColors').addEventListener('change',e=>{commit();state.useImgColors=e.target.checked;draw();});
+bindSlider('contrast','contrast',v=>(v/100).toFixed(2)+'×',draw);
+bindSlider('brightness','brightness',v=>v,draw);
 
 // content
-$('glyphs').addEventListener('input',e=>{state.glyphs=parseGlyphs(e.target.value);commit();draw();});
+$('glyphs').addEventListener('input',e=>{commit();state.glyphs=parseGlyphs(e.target.value);draw();});
 document.querySelectorAll('#presetChips .chip').forEach(chip=>chip.addEventListener('click',()=>{
-  $('glyphs').value=chip.dataset.set;state.glyphs=parseGlyphs(chip.dataset.set);commit();draw();
+  commit();$('glyphs').value=chip.dataset.set;state.glyphs=parseGlyphs(chip.dataset.set);draw();
 }));
-$('fontFamily').addEventListener('change',e=>{state.fontKey=e.target.value;commit();draw();});
+$('fontFamily').addEventListener('change',e=>{commit();state.fontKey=e.target.value;draw();});
 document.querySelectorAll('#weightSeg button').forEach(b=>b.addEventListener('click',()=>{
+  commit();
   document.querySelectorAll('#weightSeg button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on');state.weight=b.dataset.w;commit();draw();
+  b.classList.add('on');state.weight=b.dataset.w;draw();
 }));
 
 // grid lock
@@ -576,54 +702,93 @@ function applyGridLock(){
   state.rows=Math.max(2,Math.min(140,Math.round(H/lineH)));
   setSlider('cols',state.cols); setSlider('rows',state.rows);
 }
+// ASCII: character resolution is derived from symbol size + spacing so the
+// grid always tiles the canvas with square cells (keeps the image undistorted).
+function applyAsciiGrid(){
+  const step=Math.max(2,state.size*(state.spacing/100));
+  state.cols=Math.max(2,Math.min(400,Math.round(W/step)));
+  state.rows=Math.max(2,Math.min(300,Math.round(H/step)));
+  setSlider('cols',state.cols); setSlider('rows',state.rows);
+  const info=$('asciiResInfo');
+  if(info) info.textContent=`Resolution: ${state.cols} × ${state.rows} characters`;
+}
+// central "derive cols/rows?" — true if it took over cols/rows for this mode
+function applyDerivedGrid(){
+  if(state.mode==='ascii'){ applyAsciiGrid(); return true; }
+  if(state.lockGrid){ applyGridLock(); return true; }
+  return false;
+}
+// scale the canvas to the uploaded image's aspect ratio (clamped long edge)
+function fitCanvasToImage(img){
+  const long=Math.max(img.width,img.height);
+  let scale=1;
+  if(long>2400) scale=2400/long; else if(long<600) scale=600/long;
+  state.canvasW=Math.max(100,Math.round(img.width*scale));
+  state.canvasH=Math.max(100,Math.round(img.height*scale));
+  applyCanvasSize();
+}
+// show/hide grid controls that don't apply to the current mode
+function refreshGridControlsForMode(){
+  const isAscii=state.mode==='ascii';
+  $('lockGridRow').style.display=isAscii?'none':'flex';
+  $('colsRow').style.display=isAscii?'none':'block';
+  $('rowsRow').style.display=isAscii?'none':'block';
+  $('asciiResInfo').style.display=isAscii?'block':'none';
+  // ASCII always exposes spacing (it drives resolution); generative only when locked
+  $('spacingRow').style.display=(isAscii||state.lockGrid)?'block':'none';
+}
 $('lockGrid').addEventListener('change',e=>{
+  commit();
   state.lockGrid=e.target.checked;
   $('spacingRow').style.display=state.lockGrid?'block':'none';
   $('cols').disabled=state.lockGrid; $('rows').disabled=state.lockGrid;
   if(state.lockGrid) applyGridLock();
-  commit(); rebuild();
+  rebuild();
 });
 
 function setSlider(id,v,fmt){const el=$(id);if(!el)return;el.value=v;const val=$(id+'Val');if(val)val.textContent=fmt?fmt(v):v;}
 function bindSlider(id,key,fmt,after){
   const el=$(id);
   el.addEventListener('input',()=>{
+    commit();
     state[key]=parseFloat(el.value);
     const val=$(id+'Val'); if(val) val.textContent=fmt?fmt(el.value):el.value;
-    (after||draw)(); commit();
+    (after||draw)();
   });
 }
-bindSlider('spacing','spacing',v=>(v/100).toFixed(2),()=>{applyGridLock();rebuild();});
+bindSlider('spacing','spacing',v=>(v/100).toFixed(2),()=>{applyDerivedGrid();rebuild();});
 bindSlider('cols','cols',v=>v,rebuild);
 bindSlider('rows','rows',v=>v,rebuild);
 bindSlider('density','density',v=>v+'%',draw);
 $('size').addEventListener('input',()=>{
-  state.size=+$('size').value; $('sizeVal').textContent=state.size+'px';
-  if(state.lockGrid){applyGridLock();rebuild();} else draw();
   commit();
+  state.size=+$('size').value; $('sizeVal').textContent=state.size+'px';
+  sizeByMode[state.mode]=state.size;
+  if(applyDerivedGrid()){rebuild();} else draw();
 });
 bindSlider('sizeJit','sizeJit',v=>v+'%',draw);
 bindSlider('posJit','posJit',v=>v+'%',draw);
 bindSlider('rotJit','rotJit',v=>v,draw);
-$('showGrid').addEventListener('click',e=>{state.showGrid=!state.showGrid;e.target.textContent='Show grid guide: '+(state.showGrid?'on':'off');draw();});
+$('showGrid').addEventListener('click',e=>{commit();state.showGrid=!state.showGrid;e.target.textContent='Show grid guide: '+(state.showGrid?'on':'off');draw();});
 
 // zone
 document.querySelectorAll('#zoneSeg button').forEach(b=>b.addEventListener('click',()=>{
+  commit();
   document.querySelectorAll('#zoneSeg button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');state.zone=b.dataset.z;
   $('ellipseControls').style.display=state.zone==='ellipse'?'block':'none';
   $('maskControls').style.display=state.zone==='mask'?'block':'none';
   $('app').classList.toggle('mask-mode',state.zone==='mask');
-  commit();draw();
+  draw();
 }));
 ['ezx','ezy','ezw','ezh'].forEach(id=>{
   const key=id.slice(2); const label={x:'x',y:'y',w:'w',h:'h'}[key];
-  $(id).addEventListener('input',()=>{state.ez[label]=+$(id).value;$(id+'Val').textContent=$(id).value+'%';draw();commit();});
+  $(id).addEventListener('input',()=>{commit();state.ez[label]=+$(id).value;$(id+'Val').textContent=$(id).value+'%';draw();});
 });
 $('brush').addEventListener('input',e=>{state.brush=+e.target.value;$('brushVal').textContent=e.target.value;});
 $('brushDraw').addEventListener('click',()=>{state.brushMode='draw';$('brushDraw').classList.add('primary');$('brushErase').classList.remove('primary');});
 $('brushErase').addEventListener('click',()=>{state.brushMode='erase';$('brushErase').classList.add('primary');$('brushDraw').classList.remove('primary');});
-$('clearMask').addEventListener('click',()=>{maskCtx.clearRect(0,0,W,H);draw();});
+$('clearMask').addEventListener('click',()=>{lastMaskImg=null;$('maskImgStatus').textContent='Bright areas become spawnable; dark areas are excluded.';maskCtx.clearRect(0,0,W,H);draw();});
 let painting=false;
 function paintAt(e){
   const rect=maskC.getBoundingClientRect(), sx=W/rect.width, sy=H/rect.height;
@@ -636,11 +801,46 @@ maskC.addEventListener('pointerdown',e=>{if(state.zone!=='mask')return;painting=
 maskC.addEventListener('pointermove',e=>{if(painting)paintAt(e);});
 window.addEventListener('pointerup',()=>{if(painting){painting=false;draw();}});
 
+// mask from uploaded image — luminance becomes the mask alpha
+let lastMaskImg=null;
+function applyMaskImage(img){
+  lastMaskImg=img;
+  const ir=img.width/img.height, gr=W/H;
+  let sw,sh,sx,sy;
+  if(ir>gr){ sh=img.height; sw=sh*gr; sx=(img.width-sw)/2; sy=0; }
+  else{ sw=img.width; sh=sw/gr; sx=0; sy=(img.height-sh)/2; }
+  const off=document.createElement('canvas'); off.width=W; off.height=H;
+  const octx=off.getContext('2d',{willReadFrequently:true});
+  octx.drawImage(img,sx,sy,sw,sh,0,0,W,H);
+  const imgData=octx.getImageData(0,0,W,H); const d=imgData.data;
+  const invert=$('maskImgInvert').checked;
+  for(let i=0;i<d.length;i+=4){
+    let lum=(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2])/255;
+    if(invert) lum=1-lum;
+    d[i+3]=Math.round(lum*255);
+  }
+  maskCtx.clearRect(0,0,W,H);
+  maskCtx.putImageData(imgData,0,0);
+}
+$('loadMaskImage').addEventListener('click',()=>$('maskImageFile').click());
+$('maskImageFile').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const url=URL.createObjectURL(f); const img=new Image();
+  img.onload=()=>{
+    commit();
+    applyMaskImage(img);
+    $('maskImgStatus').textContent=`Mask from: ${f.name} (${img.width}×${img.height})`;
+    URL.revokeObjectURL(url); e.target.value=''; draw();
+  };
+  img.src=url;
+});
+$('maskImgInvert').addEventListener('change',()=>{ if(lastMaskImg){commit();applyMaskImage(lastMaskImg);draw();} });
+
 // colors — background
-function syncBg(hex){if(validHex(hex)){state.bg=hex;$('bgColor').value=hex.length===4?'#'+hex.slice(1).split('').map(c=>c+c).join(''):hex;$('bgHex').value=hex;draw();commit();}}
-$('bgColor').addEventListener('input',e=>{state.bg=e.target.value;$('bgHex').value=e.target.value;draw();commit();});
+function syncBg(hex){if(validHex(hex)){commit();state.bg=hex;$('bgColor').value=hex.length===4?'#'+hex.slice(1).split('').map(c=>c+c).join(''):hex;$('bgHex').value=hex;draw();}}
+$('bgColor').addEventListener('input',e=>{commit();state.bg=e.target.value;$('bgHex').value=e.target.value;draw();});
 $('bgHex').addEventListener('input',e=>syncBg(e.target.value));
-$('bgTransparent').addEventListener('change',e=>{state.bgTransparent=e.target.checked;draw();commit();});
+$('bgTransparent').addEventListener('change',e=>{commit();state.bgTransparent=e.target.checked;draw();});
 
 // colors — palette (bigger rows w/ hex)
 function renderPalette(){
@@ -650,16 +850,17 @@ function renderPalette(){
     const pick=document.createElement('input'); pick.type='color'; pick.value=/^#([0-9a-f]{6})$/i.test(col)?col:'#000000';
     const hex=document.createElement('input'); hex.type='text'; hex.className='hex'; hex.value=col;
     const del=document.createElement('button'); del.className='del'; del.textContent='×'; del.title='Remove';
-    pick.addEventListener('input',()=>{state.palette[i]=pick.value;hex.value=pick.value;draw();commit();});
-    hex.addEventListener('input',()=>{if(validHex(hex.value)){state.palette[i]=hex.value;if(/^#[0-9a-f]{6}$/i.test(hex.value))pick.value=hex.value;draw();commit();}});
-    del.addEventListener('click',()=>{if(state.palette.length>1){state.palette.splice(i,1);renderPalette();draw();commit();}});
+    pick.addEventListener('input',()=>{commit();state.palette[i]=pick.value;hex.value=pick.value;draw();});
+    hex.addEventListener('input',()=>{if(validHex(hex.value)){commit();state.palette[i]=hex.value;if(/^#[0-9a-f]{6}$/i.test(hex.value))pick.value=hex.value;draw();}});
+    del.addEventListener('click',()=>{if(state.palette.length>1){commit();state.palette.splice(i,1);renderPalette();draw();}});
     row.append(pick,hex,del); box.appendChild(row);
   });
 }
 function addColor(){
   let v=$('newHex').value.trim();
   if(!validHex(v)) v=$('newColor').value;
-  state.palette.push(v); renderPalette(); draw(); commit();
+  commit();
+  state.palette.push(v); renderPalette(); draw();
 }
 $('addColor').addEventListener('click',addColor);
 $('newColor').addEventListener('input',e=>$('newHex').value=e.target.value);
@@ -668,21 +869,22 @@ $('newHex').addEventListener('keydown',e=>{if(e.key==='Enter')addColor();});
 
 // animation
 $('animate').addEventListener('change',e=>{
+  commit();
   state.animate=e.target.checked;
   $('animControls').style.display=state.animate?'block':'none';
   $('playBtn').style.display=state.animate?'inline-block':'none';
-  updateFrameCount();draw();commit();
+  updateFrameCount();draw();
 });
-$('animMode').addEventListener('change',e=>{state.animMode=e.target.value;draw();commit();});
+$('animMode').addEventListener('change',e=>{commit();state.animMode=e.target.value;draw();});
 bindSlider('speed','speed',v=>(v/100).toFixed(1)+'×',draw);
 bindSlider('intensity','intensity',v=>v+'%',draw);
-$('loop').addEventListener('input',()=>{state.loop=+$('loop').value;$('loopVal').textContent=state.loop;updateFrameCount();draw();commit();});
-$('fps').addEventListener('input',()=>{state.fps=+$('fps').value;updateFrameCount();commit();});
+$('loop').addEventListener('input',()=>{commit();state.loop=+$('loop').value;$('loopVal').textContent=state.loop;updateFrameCount();draw();});
+$('fps').addEventListener('input',()=>{commit();state.fps=+$('fps').value;updateFrameCount();});
 function updateFrameCount(){$('frameCount').textContent=state.animate?`${Math.round(state.loop*state.fps)} frames`:'—';}
 
 // seed / reroll
 bindSlider('seed','seed',v=>v,rebuild);
-$('reroll').addEventListener('click',()=>{state.seed=Math.floor(Math.random()*9999)+1;setSlider('seed',state.seed);rebuild();commit();});
+$('reroll').addEventListener('click',()=>{commit();state.seed=Math.floor(Math.random()*9999)+1;setSlider('seed',state.seed);rebuild();});
 $('playBtn').addEventListener('click',()=>{startTime=performance.now();if(!rafId)draw();});
 
 // undo / reset / surprise
@@ -691,19 +893,28 @@ $('resetBtn').addEventListener('click',()=>{
   snapshot();
   state=structuredClone(DEFAULTS);
   sourceImg=null; sampled=null; $('imgStatus').textContent='No image loaded. Uploads stay on your machine.';
-  maskCtx.clearRect(0,0,W,H);
-  syncUIFromState(); rebuild();
+  lastMaskImg=null; $('maskImgStatus').textContent='Bright areas become spawnable; dark areas are excluded.';
+  syncUIFromState(); maskCtx.clearRect(0,0,W,H); rebuild();
 });
 $('surpriseBtn').addEventListener('click',()=>{
   snapshot();
   const rnd=(a,b)=>a+Math.random()*(b-a);
   const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
   const sets=['/ \\ < > -','• ◦ ● ○','0 1','A B C D E F','↑ ↗ → ↘ ↓ ↙ ← ↖','+ × ÷ = ≈ ∞','| — · :','◜ ◝ ◞ ◟'];
+  const ramps=[' .:-=+*#%@',' .,:;irsXA253hMHGS#9B&@',' .oO0@',' ░▒▓█',' .`\'^",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXY0Oa*#MW&8%B@$'];
   const bgs=['#efece4','#14140f','#f5f2ea','#1a2b3a','#2a2118','#0d0d0d','#e8e2d0'];
   const darks=['#2b2b28','#1a1a17','#3a3632','#222'];
   const accents=['#e8562e','#c9a6e8','#3b82c4','#e0b23a','#d4537e','#5dcaa5','#ff6b35'];
-  state.mode='generative';
-  state.glyphs=parseGlyphs(pick(sets));
+  const isAscii=state.mode==='ascii';
+  if(isAscii){
+    state.ramp=pick(ramps);
+    state.invert=Math.random()<0.5;
+    state.useImgColors=sourceImg?Math.random()<0.5:false;
+    state.contrast=Math.round(rnd(70,180));
+    state.brightness=Math.round(rnd(-30,30));
+  }else{
+    state.glyphs=parseGlyphs(pick(sets));
+  }
   state.fontKey=pick(['mono','mono','sans']);
   state.weight=pick(['300','400','400','700']);
   state.lockGrid=false;
@@ -723,14 +934,57 @@ $('surpriseBtn').addEventListener('click',()=>{
   state.animMode=pick(['flicker','shuffle','drift','typewriter']);
   state.speed=Math.round(rnd(40,200)); state.intensity=Math.round(rnd(30,90)); state.loop=Math.round(rnd(2,8));
   state.seed=Math.floor(Math.random()*9999)+1;
+  if(isAscii){
+    // keep the picture legible: full-ish fill, gentler jitter, size drives resolution
+    state.density=Math.round(rnd(85,100));
+    state.size=Math.round(rnd(8,20)); state.spacing=Math.round(rnd(90,140));
+    state.sizeJit=Math.round(rnd(0,20)); state.posJit=Math.round(rnd(0,15)); state.rotJit=0;
+    densityByMode.ascii=state.density; sizeByMode.ascii=state.size;
+  }else{
+    densityByMode.generative=state.density; sizeByMode.generative=state.size;
+  }
   syncUIFromState(); rebuild();
 });
 
 // zoom / fit
 const scaleEl=$('canvas-scale'); let zoom=1;
+const ZOOM_MIN=0.05, ZOOM_MAX=4;
 function fit(){const wrap=$('canvas-wrap'),pad=48;zoom=Math.min((wrap.clientWidth-pad)/W,(wrap.clientHeight-pad)/H);applyZoom();}
 function applyZoom(){scaleEl.style.width=W*zoom+'px';scaleEl.style.height=H*zoom+'px';[main,maskC].forEach(cv=>{cv.style.width=W*zoom+'px';cv.style.height=H*zoom+'px';});$('zoomPill').textContent='Zoom '+Math.round(zoom*100)+'%';}
+function setZoom(z){zoom=Math.max(ZOOM_MIN,Math.min(ZOOM_MAX,z));applyZoom();}
 $('fitBtn').addEventListener('click',fit); window.addEventListener('resize',fit);
+$('zoomInBtn').addEventListener('click',()=>setZoom(zoom*1.25));
+$('zoomOutBtn').addEventListener('click',()=>setZoom(zoom/1.25));
+$('zoomPill').addEventListener('click',()=>setZoom(1));
+$('canvas-wrap').addEventListener('wheel',e=>{
+  e.preventDefault();
+  setZoom(zoom*(e.deltaY<0?1.1:1/1.1));
+},{passive:false});
+
+// canvas size
+function applyCanvasSize(){
+  W=state.canvasW; H=state.canvasH;
+  if(main.width!==W) main.width=W;
+  if(main.height!==H) main.height=H;
+  if(maskC.width!==W) maskC.width=W;
+  if(maskC.height!==H) maskC.height=H;
+  $('canvasSizePill').textContent=`${W} × ${H}`;
+}
+const CANVAS_PRESETS={hd:[1920,1080],vertical:[1080,1920],square:[1080,1080],uhd:[3840,2160]};
+$('canvasPreset').addEventListener('change',e=>{
+  const v=e.target.value; if(v==='custom') return;
+  const [w,h]=CANVAS_PRESETS[v]; $('canvasWInput').value=w; $('canvasHInput').value=h;
+});
+$('applyCanvasSize').addEventListener('click',()=>{
+  const w=Math.max(100,Math.min(8000,Math.round(+$('canvasWInput').value)||state.canvasW));
+  const h=Math.max(100,Math.min(8000,Math.round(+$('canvasHInput').value)||state.canvasH));
+  if(w===state.canvasW && h===state.canvasH) return;
+  commit();
+  state.canvasW=w; state.canvasH=h;
+  applyCanvasSize();
+  lastMaskImg=null;
+  rebuild(); fit();
+});
 
 // keyboard undo
 window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();undo();}});
@@ -752,9 +1006,8 @@ function collectItems(){
     const size=state.size*(1+cell.rSize*(state.sizeJit/100)-(state.sizeJit/200));
     let glyph,color;
     if(ascii){
-      const idx=cell.r*sampled.cols+cell.c, b=sampled.lum[idx];
-      let t=state.invert?b:1-b; let ri=Math.max(0,Math.min(ramp.length-1,Math.round(t*(ramp.length-1))));
-      glyph=ramp[ri]; if(glyph===' ')continue;
+      const idx=cell.r*sampled.cols+cell.c;
+      glyph=rampCharFor(sampled.lum[idx],ramp); if(glyph===' ')continue;
       color=state.useImgColors?`rgb(${sampled.rgb[idx*3]},${sampled.rgb[idx*3+1]},${sampled.rgb[idx*3+2]})`:(state.palette[Math.floor(cell.rColor*state.palette.length)]||'#000');
     }else{
       glyph=state.glyphs[Math.floor(cell.rGlyph*state.glyphs.length)]||'?';
@@ -801,6 +1054,36 @@ $('exSeq').addEventListener('click',async()=>{
   download(await zip.generateAsync({type:'blob'}),`glyph-sequence_${fps}fps.zip`);
   btn.textContent=orig;btn.disabled=false;
 });
+// gif.js loads its worker as a same-origin Worker; a bare cdnjs URL gets
+// blocked cross-origin, so fetch the script once and run it from a blob URL.
+let gifWorkerUrl=null;
+async function getGifWorkerUrl(){
+  if(gifWorkerUrl) return gifWorkerUrl;
+  const text=await(await fetch('https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js')).text();
+  gifWorkerUrl=URL.createObjectURL(new Blob([text],{type:'application/javascript'}));
+  return gifWorkerUrl;
+}
+$('exGIF').addEventListener('click',async()=>{
+  if(!state.animate){alert('Turn on "Dynamic mode" to export a GIF.');return;}
+  if(typeof GIF==='undefined'){alert('GIF encoder failed to load — check your internet connection and try again.');return;}
+  const btn=$('exGIF'),orig=btn.textContent;btn.disabled=true;btn.textContent='Preparing…';
+  let workerScript;
+  try{ workerScript=await getGifWorkerUrl(); }
+  catch(err){ alert('Could not load the GIF encoder worker: '+err.message); btn.textContent=orig; btn.disabled=false; return; }
+  const fps=state.fps,dur=state.loop,total=Math.round(fps*dur),delay=Math.round(1000/fps);
+  const gif=new GIF({workers:2,quality:10,width:W,height:H,workerScript});
+  const off=document.createElement('canvas');off.width=W;off.height=H;const octx=off.getContext('2d');
+  gif.on('progress',p=>{btn.textContent=`Encoding ${Math.round(p*100)}%…`;});
+  gif.on('finished',blob=>{download(blob,`glyph-grid_${fps}fps.gif`);btn.textContent=orig;btn.disabled=false;});
+  for(let f=0;f<total;f++){
+    drawScene(octx,f/fps,false);
+    gif.addFrame(octx,{copy:true,delay});
+    btn.textContent=`Frame ${f+1}/${total}…`;
+    await new Promise(r=>setTimeout(r,0));
+  }
+  btn.textContent='Encoding…';
+  gif.render();
+});
 $('saveProj').addEventListener('click',()=>{download(new Blob([JSON.stringify({state,mask:maskC.toDataURL()})],{type:'application/json'}),'glyph-project.json');});
 $('loadProj').addEventListener('click',()=>$('projFile').click());
 $('projFile').addEventListener('change',e=>{
@@ -811,6 +1094,9 @@ $('projFile').addEventListener('change',e=>{
 
 // ---------- sync all controls from state ----------
 function syncUIFromState(){
+  // canvas
+  $('canvasWInput').value=state.canvasW; $('canvasHInput').value=state.canvasH;
+  applyCanvasSize();
   // mode
   document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.m===state.mode));
   const isAscii=state.mode==='ascii';
@@ -818,13 +1104,17 @@ function syncUIFromState(){
   $('glyphRow').style.display=isAscii?'none':'block';
   $('presetRow').style.display=isAscii?'none':'block';
   $('ramp').value=state.ramp; $('invert').checked=state.invert; $('useImgColors').checked=state.useImgColors;
+  $('asciiFitCanvas').checked=state.asciiFitCanvas;
+  setSlider('contrast',state.contrast,v=>(v/100).toFixed(2)+'×'); setSlider('brightness',state.brightness);
   // content
   $('glyphs').value=state.glyphs.join(' ');
   $('fontFamily').value=state.fontKey;
   document.querySelectorAll('#weightSeg button').forEach(b=>b.classList.toggle('on',b.dataset.w===state.weight));
   // grid
-  $('lockGrid').checked=state.lockGrid; $('spacingRow').style.display=state.lockGrid?'block':'none';
+  $('lockGrid').checked=state.lockGrid;
   $('cols').disabled=state.lockGrid; $('rows').disabled=state.lockGrid;
+  refreshGridControlsForMode();
+  if(isAscii) applyAsciiGrid();
   setSlider('spacing',state.spacing,v=>(v/100).toFixed(2));
   setSlider('cols',state.cols); setSlider('rows',state.rows);
   setSlider('density',state.density,v=>v+'%'); setSlider('size',state.size,v=>v+'px');

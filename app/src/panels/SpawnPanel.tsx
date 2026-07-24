@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { primeImage } from '../engine/imageSample';
-import { useStudio } from '../state/store';
+import { useStudio, useActiveLayer } from '../state/store';
 import { Panel } from '../ui/Panel';
 import { Segmented } from '../ui/Segmented';
 import { Toggle } from '../ui/Toggle';
@@ -8,7 +8,6 @@ import { Button } from '../ui/Button';
 import { ControlSlider } from '../ui/ControlSlider';
 
 export function SpawnPanel() {
-  const scene = useStudio((s) => s.scene);
   const setSpawn = useStudio((s) => s.setSpawn);
   const brushSize = useStudio((s) => s.brushSize);
   const setBrushSize = useStudio((s) => s.setBrushSize);
@@ -16,7 +15,7 @@ export function SpawnPanel() {
   const setBrushErase = useStudio((s) => s.setBrushErase);
   const maskVisible = useStudio((s) => s.maskVisible);
   const setMaskVisible = useStudio((s) => s.setMaskVisible);
-  const layer = scene.layers[0];
+  const layer = useActiveLayer();
   const spawn = layer.spawn;
   const fileRef = useRef<HTMLInputElement>(null);
   const [lastImage, setLastImage] = useState<string | null>(null);

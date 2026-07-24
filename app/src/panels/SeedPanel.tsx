@@ -1,13 +1,12 @@
 import { resolveParam, type Param } from '../domain/params';
-import { useStudio } from '../state/store';
+import { useStudio, useActiveLayer } from '../state/store';
 import { Panel } from '../ui/Panel';
 import { ControlSlider } from '../ui/ControlSlider';
 import { Button } from '../ui/Button';
 
 export function SeedPanel() {
-  const scene = useStudio((s) => s.scene);
   const setConstParam = useStudio((s) => s.setConstParam);
-  const layer = scene.layers[0];
+  const layer = useActiveLayer();
   const seed = (resolveParam(layer.params.seed as Param<number>, 0) as number) ?? 1;
 
   return (

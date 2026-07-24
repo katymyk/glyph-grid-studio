@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { paintScene } from '../engine/paint';
 import { resolveParam, type Param } from '../domain/params';
-import { useStudio } from '../state/store';
+import { useStudio, useActiveLayer } from '../state/store';
 
 /** Canvas surface: main artwork canvas + a brush-mask overlay, both scaled to fit. */
 export function Stage() {
@@ -19,7 +19,7 @@ export function Stage() {
   const maskVisible = useStudio((s) => s.maskVisible);
   const setSpawn = useStudio((s) => s.setSpawn);
 
-  const layer = scene.layers[0];
+  const layer = useActiveLayer();
   const spawn = layer.spawn;
   const brushActive = spawn.kind === 'brush';
   const brushMask = spawn.kind === 'brush' ? spawn.mask : null;

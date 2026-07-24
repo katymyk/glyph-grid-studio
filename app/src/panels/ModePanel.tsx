@@ -1,11 +1,10 @@
-import { useStudio } from '../state/store';
+import { useStudio, useActiveLayer } from '../state/store';
 import { Panel } from '../ui/Panel';
 import { Segmented } from '../ui/Segmented';
 
 export function ModePanel() {
-  const scene = useStudio((s) => s.scene);
   const setLayerMode = useStudio((s) => s.setLayerMode);
-  const layer = scene.layers[0];
+  const layer = useActiveLayer();
   return (
     <Panel title="Mode" defaultOpen>
       <Segmented

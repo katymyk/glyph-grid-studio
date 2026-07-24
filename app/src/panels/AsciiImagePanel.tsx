@@ -1,16 +1,15 @@
 import { useRef, useState } from 'react';
 import { resolveParam, type Param } from '../domain/params';
 import { primeImage } from '../engine/imageSample';
-import { useStudio } from '../state/store';
+import { useStudio, useActiveLayer } from '../state/store';
 import { Panel } from '../ui/Panel';
 import { Button } from '../ui/Button';
 
 /** Bespoke: upload an image (stored as a data URL param) and fit the canvas to it. */
 export function AsciiImagePanel() {
-  const scene = useStudio((s) => s.scene);
   const setConstParam = useStudio((s) => s.setConstParam);
   const setCanvasSize = useStudio((s) => s.setCanvasSize);
-  const layer = scene.layers[0];
+  const layer = useActiveLayer();
   const image = resolveParam(layer.params.image as Param<string | null>, 0);
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<string | null>(null);

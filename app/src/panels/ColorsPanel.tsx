@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { resolveParam, type Param } from '../domain/params';
-import { useStudio } from '../state/store';
+import { useStudio, useActiveLayer } from '../state/store';
 import { Panel } from '../ui/Panel';
 import { Field } from '../ui/Field';
 import { ColorField } from '../ui/ColorField';
@@ -14,7 +14,7 @@ export function ColorsPanel() {
   const setConstParam = useStudio((s) => s.setConstParam);
   const [lastBg, setLastBg] = useState('#ffffff');
 
-  const layer = scene.layers[0];
+  const layer = useActiveLayer();
   const palette = (resolveParam(layer.params.palette as Param<string[]>, 0) as string[]) ?? [];
   const transparent = scene.background === null;
   const setPalette = (arr: string[]) => setConstParam(layer.id, 'palette', arr);

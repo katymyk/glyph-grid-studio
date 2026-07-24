@@ -8,11 +8,20 @@ import { parseGlyphs } from '../lib/glyphs';
 
 interface StudioState {
   scene: Scene;
+  activeLayerId: string;
   playhead: number;
   playing: boolean;
   imageVersion: number;
   past: Scene[];
   future: Scene[];
+
+  selectLayer: (id: string) => void;
+  addLayer: () => void;
+  removeLayer: (id: string) => void;
+  moveLayer: (id: string, dir: number) => void;
+  setLayerVisible: (id: string, visible: boolean) => void;
+  setLayerOpacity: (id: string, opacity: number) => void;
+  setLayerBlend: (id: string, blend: GlobalCompositeOperation) => void;
 
   // view / interaction state (not part of the scene document, not undoable)
   showGrid: boolean;
@@ -59,6 +68,11 @@ function withParam(
 
 const HISTORY_MAX = 80;
 const modeParamsCache: Record<string, Record<string, Record<string, Param<unknown>>>> = {};
+let layerSeq = 1;
+
+function withLayer(scene: Scene, id: string, fn: (l: Scene['layers'][number]) => Scene['layers'][number]): Scene {
+  return { ...scene, layers: scene.layers.map((l) => (l.id === id ? fn(l) : l)) };
+}
 
 // ----- history: capture the PRE-change scene, debounced so a slider drag is one step -----
 let histTimer: ReturnType<typeof setTimeout> | null = null;
@@ -112,11 +126,76 @@ function surpriseScene(scene: Scene): Scene {
 
 export const useStudio = create<StudioState>((set, get) => ({
   scene: defaultScene(),
+  activeLayerId: 'layer-1',
   playhead: 0,
   playing: false,
   imageVersion: 0,
   past: [],
   future: [],
+
+  selectLayer: (id) => set({ activeLayerId: id }),
+
+  addLayer: () => {
+    recordNow(get().scene);
+    const id = `layer-${++layerSeq}`;
+    set((s) => ({
+      future: [],
+      activeLayerId: id,
+      scene: {
+        ...s.scene,
+        layers: [
+          ...s.scene.layers,
+          {
+            id,
+            name: `Layer ${s.scene.layers.length + 1}`,
+            visible: true,
+            mode: 'generative',
+            opacity: konst(1),
+            blendMode: 'source-over',
+            spawn: { kind: 'full' },
+            params: getMode('generative').defaultParams(),
+          },
+        ],
+      },
+    }));
+  },
+
+  removeLayer: (id) => {
+    if (get().scene.layers.length <= 1) return;
+    recordNow(get().scene);
+    set((s) => {
+      const layers = s.scene.layers.filter((l) => l.id !== id);
+      const activeLayerId = s.activeLayerId === id ? layers[layers.length - 1].id : s.activeLayerId;
+      return { future: [], activeLayerId, scene: { ...s.scene, layers } };
+    });
+  },
+
+  moveLayer: (id, dir) => {
+    recordNow(get().scene);
+    set((s) => {
+      const layers = [...s.scene.layers];
+      const i = layers.findIndex((l) => l.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= layers.length) return {};
+      [layers[i], layers[j]] = [layers[j], layers[i]];
+      return { future: [], scene: { ...s.scene, layers } };
+    });
+  },
+
+  setLayerVisible: (id, visible) => {
+    recordNow(get().scene);
+    set((s) => ({ future: [], scene: withLayer(s.scene, id, (l) => ({ ...l, visible })) }));
+  },
+
+  setLayerOpacity: (id, opacity) => {
+    scheduleRecord(get().scene);
+    set((s) => ({ future: [], scene: withLayer(s.scene, id, (l) => ({ ...l, opacity: konst(opacity) })) }));
+  },
+
+  setLayerBlend: (id, blend) => {
+    recordNow(get().scene);
+    set((s) => ({ future: [], scene: withLayer(s.scene, id, (l) => ({ ...l, blendMode: blend })) }));
+  },
 
   showGrid: false,
   brushSize: 80,
@@ -226,7 +305,7 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   reset: () => {
     recordNow(get().scene);
-    set({ future: [], scene: defaultScene() });
+    set({ future: [], scene: defaultScene(), activeLayerId: 'layer-1' });
   },
 
   surprise: () => {
@@ -236,3 +315,8 @@ export const useStudio = create<StudioState>((set, get) => ({
 }));
 
 onSampleReady(() => useStudio.setState((s) => ({ imageVersion: s.imageVersion + 1 })));
+
+/** The currently-selected layer (falls back to the first if the id is stale). */
+export function useActiveLayer() {
+  return useStudio((s) => s.scene.layers.find((l) => l.id === s.activeLayerId) ?? s.scene.layers[0]);
+}

@@ -11,12 +11,12 @@ import { ColorsPanel } from './panels/ColorsPanel';
 import { CanvasPanel } from './panels/CanvasPanel';
 import { ExportPanel } from './panels/ExportPanel';
 import { SeedPanel } from './panels/SeedPanel';
-import { useStudio } from './state/store';
+import { LayersPanel } from './panels/LayersPanel';
+import { useStudio, useActiveLayer } from './state/store';
 import { SchemaPanel } from './ui/controls';
 
 export function App() {
-  const scene = useStudio((s) => s.scene);
-  const layer = scene.layers[0];
+  const layer = useActiveLayer();
   const panels = panelsForMode(layer.mode);
 
   // Cmd/Ctrl+Z undo, Cmd/Ctrl+Shift+Z redo (ignored while typing in a field)
@@ -58,6 +58,7 @@ export function App() {
         </header>
         <div style={{ overflowY: 'auto', flex: 1 }}>
           <ActionsBar />
+          <LayersPanel />
           <ModePanel />
           {layer.mode === 'ascii' && <AsciiImagePanel />}
           {panels.map((def) => (

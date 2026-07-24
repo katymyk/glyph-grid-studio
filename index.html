@@ -323,7 +323,7 @@
         </div>
       </details>
 
-      <details class="group">
+      <details class="group" id="animGroup">
         <summary>Animation</summary>
         <div class="body">
           <div class="row switch"><label style="margin:0">Dynamic mode</label><input type="checkbox" id="animate"></div>
@@ -577,7 +577,7 @@ function drawScene(ctx,tSec,guide){
     }
 
     let alpha=1,dx=0,dy=0,rot=cell.rRot*(state.rotJit*Math.PI/180);
-    if(state.animate){
+    if(isAnimating()){
       const phase=cell.rPhase, cyc=((tSec*speed)/loopDur+phase)%1;
       if(state.animMode==='flicker'){const s=0.5-0.5*Math.cos(cyc*Math.PI*2);alpha=1-intensity+intensity*s;}
       else if(state.animMode==='typewriter'){const order=(cell.r*state.cols+cell.c)/cells.length;alpha=cyc>=order?1:0;}
@@ -601,16 +601,18 @@ function drawScene(ctx,tSec,guide){
 }
 
 // ---------- live loop ----------
+// Animation is disabled in ASCII mode — a still image shouldn't flicker/drift.
+function isAnimating(){ return state.animate && state.mode!=='ascii'; }
 let rafId=null, startTime=performance.now();
 function frame(now){
   const t=(now-startTime)/1000;
   const drawn=drawScene(mctx,t,true);
   $('status').textContent=`${drawn} elements · ${state.cols}×${state.rows}${state.mode==='ascii'?' · ASCII':''}`;
-  if(state.animate) rafId=requestAnimationFrame(frame);
+  if(isAnimating()) rafId=requestAnimationFrame(frame);
 }
 function draw(){
   if(rafId){cancelAnimationFrame(rafId);rafId=null;}
-  if(state.animate){startTime=performance.now();rafId=requestAnimationFrame(frame);}
+  if(isAnimating()){startTime=performance.now();rafId=requestAnimationFrame(frame);}
   else frame(performance.now());
 }
 function rebuild(){ buildCells(); if(state.mode==='ascii') sampleImage(); draw(); }
@@ -646,10 +648,17 @@ document.querySelectorAll('#modeSeg button').forEach(b=>b.addEventListener('clic
   $('glyphRow').style.display=isAscii?'none':'block';
   $('presetRow').style.display=isAscii?'none':'block';
   refreshGridControlsForMode();
+  refreshAnimForMode();
   if(isAscii){ if(sourceImg && state.asciiFitCanvas) fitCanvasToImage(sourceImg); applyAsciiGrid(); }
   rebuild();
   if(isAscii && sourceImg && state.asciiFitCanvas) fit();
 }));
+// Animation panel + Play button don't apply to ASCII stills.
+function refreshAnimForMode(){
+  const isAscii=state.mode==='ascii';
+  $('animGroup').style.display=isAscii?'none':'';
+  $('playBtn').style.display=(!isAscii && state.animate)?'inline-block':'none';
+}
 $('loadImage').addEventListener('click',()=>$('imageFile').click());
 $('imageFile').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f)return;
@@ -1039,7 +1048,7 @@ $('exJSON').addEventListener('click',()=>{
   download(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'glyph-grid.json');
 });
 $('exSeq').addEventListener('click',async()=>{
-  if(!state.animate){alert('Turn on "Dynamic mode" to export a sequence.');return;}
+  if(!isAnimating()){alert(state.mode==='ascii'?'Animation is disabled in ASCII mode — use PNG/SVG for a still.':'Turn on "Dynamic mode" to export a sequence.');return;}
   const btn=$('exSeq'),orig=btn.textContent;btn.disabled=true;
   const fps=state.fps,dur=state.loop,total=Math.round(fps*dur);
   const zip=new JSZip(), off=document.createElement('canvas');off.width=W;off.height=H;const octx=off.getContext('2d');
@@ -1064,7 +1073,7 @@ async function getGifWorkerUrl(){
   return gifWorkerUrl;
 }
 $('exGIF').addEventListener('click',async()=>{
-  if(!state.animate){alert('Turn on "Dynamic mode" to export a GIF.');return;}
+  if(!isAnimating()){alert(state.mode==='ascii'?'Animation is disabled in ASCII mode — use PNG/SVG for a still.':'Turn on "Dynamic mode" to export a GIF.');return;}
   if(typeof GIF==='undefined'){alert('GIF encoder failed to load — check your internet connection and try again.');return;}
   const btn=$('exGIF'),orig=btn.textContent;btn.disabled=true;btn.textContent='Preparing…';
   let workerScript;
@@ -1129,10 +1138,11 @@ function syncUIFromState(){
   if(/^#[0-9a-f]{6}$/i.test(state.bg))$('bgColor').value=state.bg; $('bgHex').value=state.bg; $('bgTransparent').checked=state.bgTransparent;
   renderPalette();
   // anim
-  $('animate').checked=state.animate; $('animControls').style.display=state.animate?'block':'none'; $('playBtn').style.display=state.animate?'inline-block':'none';
+  $('animate').checked=state.animate; $('animControls').style.display=state.animate?'block':'none';
   $('animMode').value=state.animMode;
   setSlider('speed',state.speed,v=>(v/100).toFixed(1)+'×'); setSlider('intensity',state.intensity,v=>v+'%'); setSlider('loop',state.loop);
   $('fps').value=state.fps; updateFrameCount();
+  refreshAnimForMode();
   setSlider('seed',state.seed);
 }
 

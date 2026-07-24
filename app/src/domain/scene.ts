@@ -1,5 +1,11 @@
 import type { Param } from './params';
 
+/** Restricts where a layer's elements may appear. Applied centrally after a mode
+    produces placements, so every mode + export respects it uniformly. */
+export type SpawnZone =
+  | { kind: 'full' }
+  | { kind: 'image'; image: string | null; invert: boolean };
+
 /** A layer applies one render mode with its own animatable params. */
 export interface Layer {
   id: string;
@@ -8,6 +14,7 @@ export interface Layer {
   mode: string; // key into the mode registry
   opacity: Param<number>; // 0..1
   blendMode: GlobalCompositeOperation;
+  spawn: SpawnZone;
   params: Record<string, Param<unknown>>;
 }
 

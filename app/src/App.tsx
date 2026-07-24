@@ -2,6 +2,7 @@ import { Stage } from './canvas/Stage';
 import { panelsForMode } from './panels/schema';
 import { ModePanel } from './panels/ModePanel';
 import { AsciiImagePanel } from './panels/AsciiImagePanel';
+import { SpawnPanel } from './panels/SpawnPanel';
 import { ColorsPanel } from './panels/ColorsPanel';
 import { CanvasPanel } from './panels/CanvasPanel';
 import { ExportPanel } from './panels/ExportPanel';
@@ -41,6 +42,7 @@ export function App() {
           {panels.map((def) => (
             <SchemaPanel key={def.id} layerId={layer.id} def={def} />
           ))}
+          <SpawnPanel />
           <ColorsPanel />
           <CanvasPanel />
           <ExportPanel />

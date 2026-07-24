@@ -18,6 +18,7 @@ export function defaultScene(): Scene {
         mode: 'generative',
         opacity: konst(1),
         blendMode: 'source-over',
+        spawn: { kind: 'full' },
         params: generativeMode.defaultParams(),
       },
     ],

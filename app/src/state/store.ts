@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { konst, type Param } from '../domain/params';
 import { defaultScene } from '../domain/defaults';
-import type { Scene } from '../domain/scene';
+import type { Scene, SpawnZone } from '../domain/scene';
 import { getMode } from '../engine/modes';
 import { onSampleReady } from '../engine/imageSample';
 
@@ -12,6 +12,7 @@ interface StudioState {
 
   setConstParam: (layerId: string, key: string, value: unknown) => void;
   setLayerMode: (layerId: string, mode: string) => void;
+  setSpawn: (layerId: string, spawn: SpawnZone) => void;
   setBackground: (bg: string | null) => void;
   setCanvasSize: (width: number, height: number) => void;
   setPlayhead: (t: number) => void;
@@ -50,6 +51,14 @@ export const useStudio = create<StudioState>((set) => ({
         },
       };
     }),
+
+  setSpawn: (layerId, spawn) =>
+    set((s) => ({
+      scene: {
+        ...s.scene,
+        layers: s.scene.layers.map((l) => (l.id === layerId ? { ...l, spawn } : l)),
+      },
+    })),
 
   setBackground: (bg) => set((s) => ({ scene: { ...s.scene, background: bg } })),
   setCanvasSize: (width, height) => set((s) => ({ scene: { ...s.scene, width, height } })),

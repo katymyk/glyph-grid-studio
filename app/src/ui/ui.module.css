@@ -241,6 +241,15 @@
   color: #fff;
   font-weight: 600;
 }
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.btnGrid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
 .numberInput {
   width: 100%;
   background: var(--panel-2);

@@ -4,11 +4,14 @@ import { defaultScene } from '../domain/defaults';
 import type { Scene, SpawnZone } from '../domain/scene';
 import { getMode } from '../engine/modes';
 import { onSampleReady } from '../engine/imageSample';
+import { parseGlyphs } from '../lib/glyphs';
 
 interface StudioState {
   scene: Scene;
-  playhead: number; // seconds
-  imageVersion: number; // bumps when a lazily-decoded image lands, to force a repaint
+  playhead: number;
+  imageVersion: number;
+  past: Scene[];
+  future: Scene[];
 
   setConstParam: (layerId: string, key: string, value: unknown) => void;
   setLayerMode: (layerId: string, mode: string) => void;
@@ -16,54 +19,146 @@ interface StudioState {
   setBackground: (bg: string | null) => void;
   setCanvasSize: (width: number, height: number) => void;
   setPlayhead: (t: number) => void;
+  undo: () => void;
+  redo: () => void;
+  reset: () => void;
+  surprise: () => void;
 }
 
-// Per-layer, per-mode param memory so switching modes back and forth is lossless.
+const HISTORY_MAX = 80;
 const modeParamsCache: Record<string, Record<string, Record<string, Param<unknown>>>> = {};
 
-export const useStudio = create<StudioState>((set) => ({
+// ----- history: capture the PRE-change scene, debounced so a slider drag is one step -----
+let histTimer: ReturnType<typeof setTimeout> | null = null;
+let histPrev: Scene | null = null;
+function flushHistory(): void {
+  if (histTimer) {
+    clearTimeout(histTimer);
+    histTimer = null;
+  }
+  const p = histPrev;
+  histPrev = null;
+  if (p) useStudio.setState((s) => ({ past: [...s.past, p].slice(-HISTORY_MAX), future: [] }));
+}
+function scheduleRecord(prev: Scene): void {
+  if (histPrev === null) histPrev = prev;
+  if (histTimer) clearTimeout(histTimer);
+  histTimer = setTimeout(flushHistory, 300);
+}
+function recordNow(prev: Scene): void {
+  flushHistory();
+  useStudio.setState((s) => ({ past: [...s.past, prev].slice(-HISTORY_MAX), future: [] }));
+}
+
+function surpriseScene(scene: Scene): Scene {
+  const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+  const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+  const layer = scene.layers[0];
+  const params = { ...layer.params };
+  if (layer.mode === 'generative') {
+    const sets = ['/ \\ < > -', '• ◦ ● ○', '0 1', 'A B C D E F', '↑ ↗ → ↘ ↓ ↙ ← ↖', '+ × ÷ = ≈ ∞'];
+    params.glyphs = konst(parseGlyphs(pick(sets)));
+    params.cols = konst(Math.round(rnd(10, 60)));
+    params.rows = konst(Math.round(rnd(6, 32)));
+    params.density = konst(Math.round(rnd(25, 85)));
+    params.size = konst(Math.round(rnd(20, 70)));
+    params.sizeJit = konst(Math.round(rnd(0, 60)));
+    params.posJit = konst(Math.round(rnd(0, 50)));
+    params.rotJit = konst(Math.round(rnd(0, 40)));
+    params.weight = konst(pick(['300', '400', '400', '700']));
+    params.seed = konst(Math.floor(Math.random() * 9999) + 1);
+  } else if (layer.mode === 'ascii') {
+    const ramps = [' .:-=+*#%@', ' .oO0@', ' ░▒▓█', ' .,:;irsXA253hMHGS#9B&@'];
+    params.ramp = konst(pick(ramps));
+    params.invert = konst(Math.random() < 0.5);
+    params.contrast = konst(Math.round(rnd(70, 180)));
+    params.brightness = konst(Math.round(rnd(-30, 30)));
+    params.seed = konst(Math.floor(Math.random() * 9999) + 1);
+  }
+  return { ...scene, layers: scene.layers.map((l) => (l.id === layer.id ? { ...l, params } : l)) };
+}
+
+export const useStudio = create<StudioState>((set, get) => ({
   scene: defaultScene(),
   playhead: 0,
   imageVersion: 0,
+  past: [],
+  future: [],
 
-  setConstParam: (layerId, key, value) =>
+  setConstParam: (layerId, key, value) => {
+    scheduleRecord(get().scene);
     set((s) => ({
+      future: [],
       scene: {
         ...s.scene,
         layers: s.scene.layers.map((l) =>
           l.id === layerId ? { ...l, params: { ...l.params, [key]: konst(value) } } : l,
         ),
       },
-    })),
+    }));
+  },
 
-  setLayerMode: (layerId, mode) =>
-    set((s) => {
-      const layer = s.scene.layers.find((l) => l.id === layerId);
-      if (!layer || layer.mode === mode) return {};
-      (modeParamsCache[layerId] ??= {})[layer.mode] = layer.params;
-      const nextParams = modeParamsCache[layerId][mode] ?? getMode(mode).defaultParams();
-      return {
-        scene: {
-          ...s.scene,
-          layers: s.scene.layers.map((l) =>
-            l.id === layerId ? { ...l, mode, params: nextParams } : l,
-          ),
-        },
-      };
-    }),
-
-  setSpawn: (layerId, spawn) =>
+  setLayerMode: (layerId, mode) => {
+    const cur = get().scene;
+    const layer = cur.layers.find((l) => l.id === layerId);
+    if (!layer || layer.mode === mode) return;
+    recordNow(cur);
+    (modeParamsCache[layerId] ??= {})[layer.mode] = layer.params;
+    const nextParams = modeParamsCache[layerId][mode] ?? getMode(mode).defaultParams();
     set((s) => ({
+      future: [],
       scene: {
         ...s.scene,
-        layers: s.scene.layers.map((l) => (l.id === layerId ? { ...l, spawn } : l)),
+        layers: s.scene.layers.map((l) => (l.id === layerId ? { ...l, mode, params: nextParams } : l)),
       },
-    })),
+    }));
+  },
 
-  setBackground: (bg) => set((s) => ({ scene: { ...s.scene, background: bg } })),
-  setCanvasSize: (width, height) => set((s) => ({ scene: { ...s.scene, width, height } })),
+  setSpawn: (layerId, spawn) => {
+    scheduleRecord(get().scene);
+    set((s) => ({
+      future: [],
+      scene: { ...s.scene, layers: s.scene.layers.map((l) => (l.id === layerId ? { ...l, spawn } : l)) },
+    }));
+  },
+
+  setBackground: (bg) => {
+    scheduleRecord(get().scene);
+    set((s) => ({ future: [], scene: { ...s.scene, background: bg } }));
+  },
+
+  setCanvasSize: (width, height) => {
+    scheduleRecord(get().scene);
+    set((s) => ({ future: [], scene: { ...s.scene, width, height } }));
+  },
+
   setPlayhead: (t) => set({ playhead: t }),
+
+  undo: () => {
+    flushHistory();
+    set((s) => {
+      if (!s.past.length) return {};
+      const prev = s.past[s.past.length - 1];
+      return { scene: prev, past: s.past.slice(0, -1), future: [s.scene, ...s.future] };
+    });
+  },
+
+  redo: () =>
+    set((s) => {
+      if (!s.future.length) return {};
+      const next = s.future[0];
+      return { scene: next, future: s.future.slice(1), past: [...s.past, s.scene] };
+    }),
+
+  reset: () => {
+    recordNow(get().scene);
+    set({ future: [], scene: defaultScene() });
+  },
+
+  surprise: () => {
+    recordNow(get().scene);
+    set((s) => ({ future: [], scene: surpriseScene(s.scene) }));
+  },
 }));
 
-// When an async image decode completes, bump imageVersion so the canvas repaints.
 onSampleReady(() => useStudio.setState((s) => ({ imageVersion: s.imageVersion + 1 })));

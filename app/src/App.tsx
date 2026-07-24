@@ -1,11 +1,14 @@
+import { useEffect } from 'react';
 import { Stage } from './canvas/Stage';
 import { panelsForMode } from './panels/schema';
+import { ActionsBar } from './panels/ActionsBar';
 import { ModePanel } from './panels/ModePanel';
 import { AsciiImagePanel } from './panels/AsciiImagePanel';
 import { SpawnPanel } from './panels/SpawnPanel';
 import { ColorsPanel } from './panels/ColorsPanel';
 import { CanvasPanel } from './panels/CanvasPanel';
 import { ExportPanel } from './panels/ExportPanel';
+import { SeedPanel } from './panels/SeedPanel';
 import { useStudio } from './state/store';
 import { SchemaPanel } from './ui/controls';
 
@@ -13,6 +16,21 @@ export function App() {
   const scene = useStudio((s) => s.scene);
   const layer = scene.layers[0];
   const panels = panelsForMode(layer.mode);
+
+  // Cmd/Ctrl+Z undo, Cmd/Ctrl+Shift+Z redo (ignored while typing in a field)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) useStudio.getState().redo();
+        else useStudio.getState().undo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
@@ -37,6 +55,7 @@ export function App() {
           </p>
         </header>
         <div style={{ overflowY: 'auto', flex: 1 }}>
+          <ActionsBar />
           <ModePanel />
           {layer.mode === 'ascii' && <AsciiImagePanel />}
           {panels.map((def) => (
@@ -46,6 +65,7 @@ export function App() {
           <ColorsPanel />
           <CanvasPanel />
           <ExportPanel />
+          <SeedPanel />
         </div>
       </aside>
 

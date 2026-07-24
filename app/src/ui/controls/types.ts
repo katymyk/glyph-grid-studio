@@ -7,6 +7,7 @@
 export type Control =
   | { kind: 'slider'; param: string; label: string; min: number; max: number; step?: number; format?: (v: number) => string }
   | { kind: 'segmented'; param: string; label: string; options: { value: string; label: string }[] }
+  | { kind: 'toggle'; param: string; label: string }
   | { kind: 'text'; param: string; label: string; serialize?: (v: unknown) => string; parse?: (s: string) => unknown }
   | { kind: 'chips'; param: string; label: string; presets: { label: string; value: unknown }[] };
 

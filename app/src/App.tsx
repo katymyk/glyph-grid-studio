@@ -1,5 +1,7 @@
 import { Stage } from './canvas/Stage';
 import { panelsForMode } from './panels/schema';
+import { ModePanel } from './panels/ModePanel';
+import { AsciiImagePanel } from './panels/AsciiImagePanel';
 import { ColorsPanel } from './panels/ColorsPanel';
 import { CanvasPanel } from './panels/CanvasPanel';
 import { ExportPanel } from './panels/ExportPanel';
@@ -34,6 +36,8 @@ export function App() {
           </p>
         </header>
         <div style={{ overflowY: 'auto', flex: 1 }}>
+          <ModePanel />
+          {layer.mode === 'ascii' && <AsciiImagePanel />}
           {panels.map((def) => (
             <SchemaPanel key={def.id} layerId={layer.id} def={def} />
           ))}

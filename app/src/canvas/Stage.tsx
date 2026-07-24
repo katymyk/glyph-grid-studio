@@ -8,6 +8,7 @@ export function Stage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scene = useStudio((s) => s.scene);
   const playhead = useStudio((s) => s.playhead);
+  const imageVersion = useStudio((s) => s.imageVersion);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -17,7 +18,7 @@ export function Stage() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     paintScene(ctx, scene, playhead);
-  }, [scene, playhead]);
+  }, [scene, playhead, imageVersion]);
 
   return (
     <div

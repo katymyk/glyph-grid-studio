@@ -13,7 +13,13 @@ export function Toggle({
 }) {
   return (
     <div className={styles.switchRow}>
-      <span className={styles.switchLabel}>{label}</span>
+      <span
+        className={styles.switchLabel}
+        style={{ cursor: 'pointer' }}
+        onClick={() => onChange(!checked)}
+      >
+        {label}
+      </span>
       <Switch.Root checked={checked} onCheckedChange={onChange} className={styles.switchTrack}>
         <Switch.Thumb className={styles.switchThumb} />
       </Switch.Root>

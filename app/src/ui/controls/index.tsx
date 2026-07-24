@@ -6,6 +6,7 @@ import { ControlSlider } from '../ControlSlider';
 import { Segmented } from '../Segmented';
 import { TextField } from '../TextField';
 import { Chips } from '../Chips';
+import { Toggle } from '../Toggle';
 import type { Control, PanelDef } from './types';
 
 /**
@@ -32,6 +33,10 @@ const registry: Record<string, (a: RenderArgs) => ReactNode> = {
   segmented: ({ control, value, onChange }) => {
     const c = control as Extract<Control, { kind: 'segmented' }>;
     return <Segmented label={c.label} options={c.options} value={String(value)} onChange={onChange} />;
+  },
+  toggle: ({ control, value, onChange }) => {
+    const c = control as Extract<Control, { kind: 'toggle' }>;
+    return <Toggle label={c.label} checked={Boolean(value)} onChange={onChange} />;
   },
   text: ({ control, value, onChange }) => {
     const c = control as Extract<Control, { kind: 'text' }>;

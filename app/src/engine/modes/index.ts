@@ -1,5 +1,6 @@
 import type { RenderMode } from './types';
 import { generativeMode } from './generative';
+import { asciiMode } from './ascii';
 
 const registry = new Map<string, RenderMode>();
 
@@ -17,7 +18,8 @@ export function listModes(): RenderMode[] {
   return [...registry.values()];
 }
 
-// Built-in modes register on import. (ascii + particle land in later phases.)
+// Built-in modes register on import. (particle lands in a later phase.)
 registerMode(generativeMode);
+registerMode(asciiMode);
 
 export type { RenderMode, ModeContext } from './types';

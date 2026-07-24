@@ -22,6 +22,7 @@ interface StudioState {
   setBackground: (bg: string | null) => void;
   setCanvasSize: (width: number, height: number) => void;
   setDuration: (d: number) => void;
+  setFps: (fps: number) => void;
   setPlayhead: (t: number) => void;
   play: () => void;
   pause: () => void;
@@ -177,6 +178,11 @@ export const useStudio = create<StudioState>((set, get) => ({
   setDuration: (d) => {
     scheduleRecord(get().scene);
     set((s) => ({ future: [], scene: { ...s.scene, duration: Math.max(0.1, d) } }));
+  },
+
+  setFps: (fps) => {
+    scheduleRecord(get().scene);
+    set((s) => ({ future: [], scene: { ...s.scene, fps: Math.max(1, Math.min(60, Math.round(fps))) } }));
   },
 
   setPlayhead: (t) => set({ playhead: t }),

@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
+    "gif.js": "^0.2.0",
+    "jszip": "^3.10.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zustand": "^5.0.14"

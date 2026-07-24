@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// base is set for GitHub Pages project path; harmless in dev.
+// Relative base so the build works served from a domain root (Vercel/Netlify)
+// or a GitHub Pages subpath alike.
 export default defineConfig({
-  base: '/glyph-grid-studio/',
+  base: './',
   plugins: [react()],
 });

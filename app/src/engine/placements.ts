@@ -42,7 +42,7 @@ export function resolveScene(scene: Scene, t: number): ResolvedLayer[] {
     for (const [k, param] of Object.entries(layer.params)) {
       resolved[k] = resolveParam(param, t);
     }
-    const placements = mode.placements(resolved, { width: scene.width, height: scene.height });
+    const placements = mode.placements(resolved, { width: scene.width, height: scene.height, time: t });
     out.push({
       opacity: resolveParam(layer.opacity, t),
       blendMode: layer.blendMode,

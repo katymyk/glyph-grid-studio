@@ -11,6 +11,7 @@ export function ModePanel() {
         options={[
           { value: 'generative', label: 'Generative' },
           { value: 'ascii', label: 'ASCII' },
+          { value: 'particle', label: 'Particles' },
         ]}
         value={layer.mode}
         onChange={(m) => setLayerMode(layer.id, m)}

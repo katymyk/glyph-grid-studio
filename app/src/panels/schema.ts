@@ -96,12 +96,64 @@ const asciiPanels: PanelDef[] = [
   },
 ];
 
+const particlePanels: PanelDef[] = [
+  {
+    id: 'content',
+    title: 'Content',
+    defaultOpen: true,
+    controls: [
+      {
+        kind: 'text',
+        param: 'glyphs',
+        label: 'Symbols / text',
+        serialize: (v) => (Array.isArray(v) ? v.join(' ') : ''),
+        parse: (s) => parseGlyphs(s),
+      },
+      {
+        kind: 'chips',
+        param: 'glyphs',
+        label: 'Quick sets',
+        presets: [
+          { label: 'dots', value: parseGlyphs('• ◦ ● ·') },
+          { label: 'plus', value: parseGlyphs('+ × ·') },
+          { label: 'sparks', value: parseGlyphs('✦ ✧ · ˖') },
+          { label: 'binary', value: parseGlyphs('0 1') },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'particles',
+    title: 'Particles',
+    defaultOpen: true,
+    controls: [
+      { kind: 'slider', param: 'count', label: 'Count', min: 10, max: 2000 },
+      { kind: 'slider', param: 'size', label: 'Size', min: 4, max: 120, format: (v) => `${Math.round(v)}px` },
+      { kind: 'slider', param: 'sizeJit', label: 'Size jitter', min: 0, max: 100, format: (v) => `${Math.round(v)}%` },
+      { kind: 'slider', param: 'speed', label: 'Speed', min: 0, max: 200 },
+      {
+        kind: 'segmented',
+        param: 'motion',
+        label: 'Motion',
+        options: [
+          { value: 'drift', label: 'Drift' },
+          { value: 'fall', label: 'Fall' },
+          { value: 'swirl', label: 'Swirl' },
+        ],
+      },
+      { kind: 'slider', param: 'twinkle', label: 'Twinkle', min: 0, max: 100, format: (v) => `${Math.round(v)}%` },
+    ],
+  },
+];
+
 export function panelsForMode(mode: string): PanelDef[] {
   switch (mode) {
     case 'generative':
       return generativePanels;
     case 'ascii':
       return asciiPanels;
+    case 'particle':
+      return particlePanels;
     default:
       return [];
   }

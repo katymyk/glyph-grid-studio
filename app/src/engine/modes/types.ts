@@ -4,6 +4,7 @@ import type { Placement } from '../../domain/scene';
 export interface ModeContext {
   width: number;
   height: number;
+  time: number; // seconds; used by time-based modes (particles). Others may ignore it.
 }
 
 /**

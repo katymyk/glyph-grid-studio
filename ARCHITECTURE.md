@@ -47,19 +47,54 @@ Layer {
   mode: 'generative' | 'ascii' | 'particle' | …   // registry key
   opacity: Param<number>
   blendMode: GlobalCompositeOperation             // 'source-over', 'multiply', …
+  spawn: SpawnZone
   params: Record<string, Param<any>>              // mode-specific
+  morph: LayerMorph | null                        // mid-animation mode change (§4a)
 }
 
-Param<T> = { value: T }                            // constant
-         | { keyframes: { t: number; value: T; easing: Easing }[] }
+Param<T> = { kind: 'const'; value: T }
+         | { kind: 'keys';  keys: Keyframe<T>[] }
+
+Keyframe<T> = { t, value, easeOut, easeIn, hold? }  // see §4b
 ```
 
 - **"Start frame → end frame"** = a param with two keyframes.
-- **"Mix modes"** = two layers with different `mode`s and a blend mode.
+- **"Mix modes"** = two layers with different `mode`s and a blend mode, *or* one layer
+  with a `morph` (§4a) when the same artwork should change form over time.
 - **Particle mode** = one more entry in the mode registry (§5). Nothing else changes.
 
 This is the After-Effects-style scene graph; timeline, particles, and mixing all fall
 out of it instead of being special-cased.
+
+### 4a. Mode morph — one layer, two modes over time
+
+`Layer.morph` is how a single animation starts as symbols and ends as particles
+without hand-animating two layers' opacities:
+
+```
+LayerMorph {
+  mode, params            // the target mode + its own animatable params
+  start, end              // seconds — the handover window
+  style: 'fade' | 'dissolve'
+  easeOut, easeIn         // the handover curve, same two-half model as a keyframe pair
+}
+```
+
+`resolveScene` resolves `morphProgress(morph, t)` → `w`, then emits the base mode's
+placements with `alpha × (1-w)` and the target's with `alpha × w` (`fade`), or splits
+the two sets by a stable per-element hash (`dissolve`, elements swap one at a time).
+Both sets land in **one** `ResolvedLayer`, so the layer's spawn zone, opacity and blend
+mode apply once — and every exporter gets the morph for free.
+
+### 4b. Easing lives on keyframes, curves live on segments
+
+A keyframe owns two half-curves: `easeOut` (how the value *leaves* it) and `easeIn`
+(how the value *arrives* at it). The curve of the span between two keyframes is
+composed from the left key's `easeOut` and the right key's `easeIn` — each end owns
+half the span — by `segmentProgress()` in `domain/easing.ts`. Ten families
+(sine → bounce) plus `hold` (step). This is the only place interpolation shape is
+decided, so the timeline preview, the inspector, the canvas and the exports cannot
+disagree. `back`/`elastic` overshoot past the keyframe value on purpose.
 
 ## 4. Layered architecture (dependency direction points inward)
 
@@ -79,7 +114,10 @@ export/  ──renders──▶  engine/
   `sampleImage`, `drawScene`, `collectItems`, and the exporters move — ported to TS,
   behavior identical.
 - **`state/`** — the zustand store: current Scene, selection, playhead, undo history,
-  and actions. The single source of truth.
+  and actions. The single source of truth. Every param action takes a **slot** —
+  `'base'` (the layer's mode params), `'morph'` (the morph target's), or `'layer'`
+  (layer-level props like opacity) — so one set of keyframe actions drives all three
+  and the timeline never needs special cases.
 - **`ui/`** — **the design-system layer** over Base UI (Slider, Segmented, Switch,
   Select, NumberField, ColorField, Panel). Reads design tokens. **Panels import these,
   never Base UI directly** — so re-skinning or swapping a primitive touches only this
@@ -177,8 +215,11 @@ glyph-grid-studio/
         NumberField.tsx  ColorField.tsx
         *.module.css
       panels/
-        ModePanel.tsx  ContentPanel.tsx  GridPanel.tsx  CanvasPanel.tsx
-        SpawnPanel.tsx  ColorsPanel.tsx  TimelinePanel.tsx  ExportPanel.tsx
+        ModePanel.tsx  schema.ts  CanvasPanel.tsx  SpawnPanel.tsx
+        ColorsPanel.tsx  LayersPanel.tsx  ExportPanel.tsx  SeedPanel.tsx
+        Timeline.tsx          # the dock: transport + frame ruler + keyframe tracks
+        EasingInspector.tsx   # easing editor for the selected keyframe / morph
+        paramLabels.ts        # param -> label, derived from schema.ts
       canvas/
         Stage.tsx             # canvas + mask canvas + zoom/fit + rAF loop
   legacy note: v1 index.html is not moved; v2 is promoted to root at parity.
@@ -210,5 +251,23 @@ glyph-grid-studio/
 3. **Parity** — rebuild all v1 panels; match today's feature set (generative + ASCII,
    spawn zones, colors, exports). Ship-switch the deploy.
 4. **New powers** — layers + keyframe timeline → particle mode → blend/compose.
+5. **Timeline you can see** — the dock (§4b): draggable keyframes with their easing
+   curve drawn between them, per-keyframe ease-in/out + presets, hold keys, and the
+   mode-morph bar (§4a).
 
 Each phase leaves something that runs.
+
+## 12. Timeline UI notes
+
+- The ruler, every track row and the playhead share one CSS grid
+  (`grid-template-columns: var(--gutter) 1fr`), which is what keeps them on the same
+  time axis — the playhead is an `inset: 0` overlay using the same grid, not a
+  hand-computed offset.
+- Time is **displayed in frames** (`round(t × fps)`) because that's the unit the PNG
+  sequence and GIF exports emit; the model stays in seconds.
+- Drags snap to frames. Dragging a key past a neighbour re-sorts the list, so
+  `moveKeyframe` returns the key's new index and the store re-points the selection at
+  it — otherwise the drag would jump to whatever key inherited the old index.
+- Rows are derived, not stored: any param whose `kind === 'keys'` becomes a row
+  (`rowsForLayer`). Labels come from `panels/schema.ts` via `paramLabels.ts`, so the
+  timeline and the sidebar can't drift apart.

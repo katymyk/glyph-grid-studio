@@ -13,6 +13,7 @@ export function sceneToSVG(scene: Scene, t: number): string {
   for (const layer of resolveScene(scene, t)) {
     svg += `<g opacity="${layer.opacity}">\n`;
     for (const p of layer.placements) {
+      if (p.size <= 0) continue; // an overshoot easing can undershoot past 0 — not valid SVG
       const deg = (p.rotation * 180) / Math.PI;
       const tr = deg ? ` transform="rotate(${deg.toFixed(2)} ${p.x.toFixed(2)} ${p.y.toFixed(2)})"` : '';
       const fam = p.font.split(',')[0].replace(/"/g, '');

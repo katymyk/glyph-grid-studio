@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Stage } from './canvas/Stage';
-import { Transport } from './panels/Transport';
+import { Timeline } from './panels/Timeline';
 import { panelsForMode } from './panels/schema';
 import { ActionsBar } from './panels/ActionsBar';
 import { ModePanel } from './panels/ModePanel';
@@ -12,22 +12,43 @@ import { CanvasPanel } from './panels/CanvasPanel';
 import { ExportPanel } from './panels/ExportPanel';
 import { SeedPanel } from './panels/SeedPanel';
 import { LayersPanel } from './panels/LayersPanel';
+import { getMode } from './engine/modes';
 import { useStudio, useActiveLayer } from './state/store';
 import { SchemaPanel } from './ui/controls';
 
 export function App() {
   const layer = useActiveLayer();
   const panels = panelsForMode(layer.mode);
+  const morph = layer.morph;
+  const morphPanels = morph ? panelsForMode(morph.mode) : [];
 
-  // Cmd/Ctrl+Z undo, Cmd/Ctrl+Shift+Z redo (ignored while typing in a field)
+  // Undo/redo + transport keys (ignored while typing in a field)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const s = useStudio.getState();
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        if (e.shiftKey) useStudio.getState().redo();
-        else useStudio.getState().undo();
+        if (e.shiftKey) s.redo();
+        else s.undo();
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === ' ' && tag !== 'BUTTON') {
+        e.preventDefault();
+        if (s.playing) s.pause();
+        else s.play();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        s.stepFrame(e.shiftKey ? -10 : -1);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        s.stepFrame(e.shiftKey ? 10 : 1);
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        s.setPlayhead(0);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -64,6 +85,37 @@ export function App() {
           {panels.map((def) => (
             <SchemaPanel key={def.id} layerId={layer.id} def={def} />
           ))}
+
+          {morph && (
+            <>
+              <div
+                style={{
+                  padding: '9px 16px',
+                  background: 'var(--panel-2)',
+                  borderBottom: '1px solid var(--line)',
+                  borderTop: '1px solid var(--line)',
+                  fontSize: 10.5,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: 'var(--accent)',
+                }}
+              >
+                morph target · {getMode(morph.mode).label}
+              </div>
+              {morph.mode === 'ascii' && <AsciiImagePanel slot="morph" />}
+              {morphPanels.map((def) => (
+                <SchemaPanel
+                  key={`morph-${def.id}`}
+                  layerId={layer.id}
+                  def={def}
+                  slot="morph"
+                  titlePrefix="→ "
+                  defaultOpen={false}
+                />
+              ))}
+            </>
+          )}
+
           <SpawnPanel />
           <ColorsPanel />
           <CanvasPanel />
@@ -75,7 +127,7 @@ export function App() {
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <Stage />
-        <Transport />
+        <Timeline />
       </main>
     </div>
   );

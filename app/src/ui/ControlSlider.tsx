@@ -1,5 +1,6 @@
 import { Slider } from '@base-ui/react/slider';
 import { Field } from './Field';
+import { KeyToggle } from './KeyToggle';
 import styles from './ui.module.css';
 
 /** Label + value + Base UI slider. If onToggleAnimate is given, shows a keyframe
@@ -25,15 +26,7 @@ export function ControlSlider({
   animated?: boolean;
   onToggleAnimate?: () => void;
 }) {
-  const action = onToggleAnimate ? (
-    <button
-      className={animated ? `${styles.kf} ${styles.kfOn}` : styles.kf}
-      onClick={onToggleAnimate}
-      title={animated ? 'Animated — click to freeze' : 'Animate this parameter'}
-    >
-      ◆
-    </button>
-  ) : undefined;
+  const action = onToggleAnimate ? <KeyToggle animated={animated} onToggle={onToggleAnimate} /> : undefined;
 
   return (
     <Field label={label} value={format ? format(value) : Math.round(value)} action={action}>

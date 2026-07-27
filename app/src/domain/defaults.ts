@@ -20,6 +20,7 @@ export function defaultScene(): Scene {
         blendMode: 'source-over',
         spawn: { kind: 'full' },
         params: generativeMode.defaultParams(),
+        morph: null,
       },
     ],
   };

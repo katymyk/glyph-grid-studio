@@ -11,13 +11,14 @@ import { Button } from '../ui/Button';
 export function ColorsPanel() {
   const scene = useStudio((s) => s.scene);
   const setBackground = useStudio((s) => s.setBackground);
-  const setConstParam = useStudio((s) => s.setConstParam);
+  const setSharedParam = useStudio((s) => s.setSharedParam);
   const [lastBg, setLastBg] = useState('#ffffff');
 
   const layer = useActiveLayer();
   const palette = (resolveParam(layer.params.palette as Param<string[]>, 0) as string[]) ?? [];
   const transparent = scene.background === null;
-  const setPalette = (arr: string[]) => setConstParam(layer.id, 'palette', arr);
+  // one palette per layer — the morph target shares it, so a handover keeps its colors
+  const setPalette = (arr: string[]) => setSharedParam(layer.id, 'palette', arr);
 
   return (
     <Panel title="Colors">

@@ -5,7 +5,7 @@ import { ControlSlider } from '../ui/ControlSlider';
 import { Button } from '../ui/Button';
 
 export function SeedPanel() {
-  const setConstParam = useStudio((s) => s.setConstParam);
+  const setSharedParam = useStudio((s) => s.setSharedParam);
   const layer = useActiveLayer();
   const seed = (resolveParam(layer.params.seed as Param<number>, 0) as number) ?? 1;
 
@@ -16,9 +16,9 @@ export function SeedPanel() {
         value={seed}
         min={1}
         max={9999}
-        onChange={(v) => setConstParam(layer.id, 'seed', v)}
+        onChange={(v) => setSharedParam(layer.id, 'seed', v)}
       />
-      <Button onClick={() => setConstParam(layer.id, 'seed', Math.floor(Math.random() * 9999) + 1)}>
+      <Button onClick={() => setSharedParam(layer.id, 'seed', Math.floor(Math.random() * 9999) + 1)}>
         🎲 New layout (same settings)
       </Button>
     </Panel>

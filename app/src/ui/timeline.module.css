@@ -1,0 +1,537 @@
+/* Timeline dock — the visual keyframe editor. Ruler, tracks and the playhead all
+   share one CSS grid (gutter + track) so everything lines up on the same time axis. */
+
+.dock {
+  --gutter: 176px;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 0;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+.grab {
+  height: 7px;
+  flex: 0 0 7px;
+  cursor: ns-resize;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  position: relative;
+}
+.grab::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  width: 46px;
+  height: 2px;
+  margin-left: -23px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.grab:hover::after {
+  background: var(--muted);
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.side {
+  flex: 0 0 252px;
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+  padding: 9px 12px 14px;
+}
+
+/* ---- transport ---- */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.tBtn {
+  height: 26px;
+  min-width: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: var(--diamono);
+}
+.tBtn:hover {
+  border-color: #4c4c3e;
+}
+.tBtnOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.readout {
+  font-family: var(--diamono);
+  font-size: 11px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.readoutMuted {
+  color: var(--muted);
+}
+.spacer {
+  flex: 1;
+}
+.numTiny {
+  width: 54px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-family: var(--diamono);
+  font-size: 11px;
+}
+.barLabel {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ---- ruler ---- */
+.rulerRow {
+  display: grid;
+  grid-template-columns: var(--gutter) 1fr;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.rulerGutter {
+  display: flex;
+  align-items: center;
+  padding-left: 11px;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-right: 1px solid var(--line);
+}
+.ruler {
+  position: relative;
+  height: 24px;
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+.tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 5px;
+  background: var(--line);
+}
+.tickMajor {
+  height: 10px;
+  background: #4c4c3e;
+}
+.tickLabel {
+  position: absolute;
+  top: 2px;
+  font-size: 9px;
+  font-family: var(--diamono);
+  color: var(--muted);
+  padding-left: 3px;
+  pointer-events: none;
+}
+.phHandle {
+  position: absolute;
+  top: 2px;
+  width: 0;
+  height: 0;
+  margin-left: -5px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 7px solid var(--accent);
+  pointer-events: none;
+}
+
+/* ---- rows ---- */
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+.rows {
+  position: relative;
+  min-height: 100%;
+}
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: var(--gutter) 1fr;
+  pointer-events: none;
+}
+.overlayTrack {
+  position: relative;
+}
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.layerHead {
+  display: grid;
+  grid-template-columns: var(--gutter) 1fr;
+  height: 25px;
+  align-items: center;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+}
+.layerName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 10px;
+  font-size: 10.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.layerNameOn {
+  color: var(--text);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: var(--gutter) 1fr;
+  height: 27px;
+  align-items: center;
+  border-bottom: 1px solid rgba(52, 52, 42, 0.45);
+}
+.rowSel {
+  background: rgba(232, 86, 46, 0.07);
+}
+.rowGutter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 16px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 1px solid var(--line);
+  height: 100%;
+}
+.rowLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rowLabelOn {
+  color: var(--text);
+}
+.iconBtn {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--line);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 3px;
+}
+.iconBtn:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.iconBtnOn {
+  color: var(--accent);
+}
+
+.track {
+  position: relative;
+  height: 100%;
+  touch-action: none;
+}
+
+/* segment between two keyframes: its own easing curve, drawn to scale */
+.seg {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 2px;
+}
+.seg:hover {
+  background: rgba(232, 86, 46, 0.1);
+}
+.segSel {
+  background: rgba(232, 86, 46, 0.14);
+}
+.segSvg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.key {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  padding: 0;
+  border: 0;
+  background: var(--muted);
+  transform: rotate(45deg);
+  border-radius: 2px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.key:hover {
+  background: var(--text);
+}
+.keyOn {
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(232, 86, 46, 0.25);
+}
+.keyHold {
+  border-radius: 0;
+  transform: none;
+  width: 8px;
+  margin-left: -4px;
+}
+
+/* mode morph bar */
+.morphBar {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(232, 86, 46, 0.1), rgba(232, 86, 46, 0.45));
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+}
+.morphBarSel {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.morphBarText {
+  font-size: 9.5px;
+  font-family: var(--diamono);
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  padding: 0 4px;
+}
+.morphEdge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.morphEdge:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+.morphSide {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9.5px;
+  color: var(--muted);
+  font-family: var(--diamono);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.empty {
+  padding: 22px 16px;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* ---- inspector (right side) ---- */
+.sideTitle {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.sideHead {
+  font-size: 12px;
+  color: var(--text);
+  margin: 0 0 2px;
+  font-weight: 600;
+}
+.sideSub {
+  font-size: 10.5px;
+  color: var(--muted);
+  margin: 0 0 10px;
+  font-family: var(--diamono);
+}
+.block {
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+  margin-top: 10px;
+}
+.blockTitle {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0 0 7px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+.curveWrap {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin-bottom: 7px;
+}
+.curveBox {
+  flex: 0 0 62px;
+  height: 62px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px;
+}
+.curveMeta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.easeField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.easeLabel {
+  flex: 0 0 34px;
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+}
+.easeSelect {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 4px 5px;
+  font-size: 10.5px;
+  font-family: var(--diatype);
+  cursor: pointer;
+}
+.easeSelect:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 7px;
+}
+.preset {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 3px 8px;
+  font-size: 10px;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--diatype);
+}
+.preset:hover {
+  color: var(--text);
+  border-color: #4c4c3e;
+}
+.presetOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.sideBtnRow {
+  display: flex;
+  gap: 5px;
+  margin-top: 9px;
+}
+.sideBtn {
+  flex: 1;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 5px 6px;
+  font-size: 10.5px;
+  cursor: pointer;
+  font-family: var(--diatype);
+}
+.sideBtn:hover {
+  border-color: #4c4c3e;
+}
+.sideBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.sideBtnDanger:hover {
+  background: #3a2420;
+  border-color: #5a3028;
+  color: #fff;
+}
+.holdRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--muted);
+}

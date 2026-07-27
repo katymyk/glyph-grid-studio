@@ -1,16 +1,18 @@
 import { useRef, useState } from 'react';
 import { resolveParam, type Param } from '../domain/params';
 import { primeImage } from '../engine/imageSample';
-import { useStudio, useActiveLayer } from '../state/store';
+import { readParam, useStudio, useActiveLayer, type Slot } from '../state/store';
 import { Panel } from '../ui/Panel';
 import { Button } from '../ui/Button';
 
-/** Bespoke: upload an image (stored as a data URL param) and fit the canvas to it. */
-export function AsciiImagePanel() {
+/** Bespoke: upload an image (stored as a data URL param) and fit the canvas to it.
+    Takes a slot so the morph target's ASCII layer can have its own image. */
+export function AsciiImagePanel({ slot = 'base' }: { slot?: Slot }) {
   const setConstParam = useStudio((s) => s.setConstParam);
   const setCanvasSize = useStudio((s) => s.setCanvasSize);
   const layer = useActiveLayer();
-  const image = resolveParam(layer.params.image as Param<string | null>, 0);
+  const param = readParam(layer, slot, 'image') as Param<string | null> | undefined;
+  const image = param ? resolveParam(param, 0) : null;
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -26,7 +28,7 @@ export function AsciiImagePanel() {
         const long = Math.max(img.width, img.height);
         const scale = long > 2400 ? 2400 / long : long < 600 ? 600 / long : 1;
         setCanvasSize(Math.max(100, Math.round(img.width * scale)), Math.max(100, Math.round(img.height * scale)));
-        setConstParam(layer.id, 'image', dataUrl);
+        setConstParam(layer.id, 'image', dataUrl, slot);
         setStatus(`${f.name} · ${img.width}×${img.height}`);
       };
       img.src = dataUrl;
@@ -36,7 +38,7 @@ export function AsciiImagePanel() {
   };
 
   return (
-    <Panel title="Image" defaultOpen>
+    <Panel title={slot === 'morph' ? '→ Image' : 'Image'} defaultOpen>
       <Button onClick={() => fileRef.current?.click()}>Upload image</Button>
       <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onFile} />
       <p style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 8 }}>

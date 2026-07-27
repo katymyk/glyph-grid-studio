@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Field } from './Field';
 import styles from './ui.module.css';
 
@@ -8,11 +9,14 @@ export function Segmented({
   options,
   value,
   onChange,
+  action,
 }: {
   label?: string;
   options: { value: string; label: string }[];
   value: string;
   onChange: (v: string) => void;
+  /** Optional leading control (e.g. the keyframe diamond). Needs `label` to show. */
+  action?: ReactNode;
 }) {
   const seg = (
     <div className={styles.segment}>
@@ -27,5 +31,11 @@ export function Segmented({
       ))}
     </div>
   );
-  return label ? <Field label={label}>{seg}</Field> : seg;
+  return label ? (
+    <Field label={label} action={action}>
+      {seg}
+    </Field>
+  ) : (
+    seg
+  );
 }

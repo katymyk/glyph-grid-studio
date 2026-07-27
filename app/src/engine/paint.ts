@@ -25,7 +25,7 @@ export function paintScene(
     ctx.textBaseline = 'middle';
     for (const p of layer.placements) {
       const a = layer.opacity * p.alpha;
-      if (a <= 0.01) continue;
+      if (a <= 0.01 || p.size <= 0) continue; // overshoot easings can drive size past 0
       ctx.save();
       ctx.globalAlpha = a;
       ctx.translate(p.x, p.y);

@@ -1,10 +1,38 @@
 import { create } from 'zustand';
-import { konst, keyframed, withKeyframe, flatten, resolveParam, type Param } from '../domain/params';
+import {
+  konst,
+  keyframed,
+  withKeyframe,
+  flatten,
+  resolveParam,
+  keysOf,
+  moveKeyframe,
+  removeKeyframe,
+  setKeyEase,
+  setKeyHold,
+  setTrackEase,
+  DEFAULT_EASE,
+  type Param,
+} from '../domain/params';
+import type { EaseHalf } from '../domain/easing';
 import { defaultScene } from '../domain/defaults';
-import type { Scene, SpawnZone } from '../domain/scene';
+import type { Layer, LayerMorph, MorphStyle, Scene, SpawnZone } from '../domain/scene';
 import { getMode } from '../engine/modes';
 import { onSampleReady } from '../engine/imageSample';
 import { parseGlyphs } from '../lib/glyphs';
+
+/**
+ * Where a param lives on a layer. Every keyframe/animation action takes a slot, so
+ * the timeline can drive the base mode, the morph target, and layer-level props
+ * (opacity) through one set of actions.
+ */
+export type Slot = 'base' | 'morph' | 'layer';
+
+/** What the timeline has selected — drives the easing inspector. */
+export type TimelineSel =
+  | { kind: 'key'; layerId: string; slot: Slot; param: string; index: number }
+  | { kind: 'morph'; layerId: string }
+  | null;
 
 interface StudioState {
   scene: Scene;
@@ -12,6 +40,7 @@ interface StudioState {
   playhead: number;
   playing: boolean;
   imageVersion: number;
+  selection: TimelineSel;
   past: Scene[];
   future: Scene[];
 
@@ -20,7 +49,6 @@ interface StudioState {
   removeLayer: (id: string) => void;
   moveLayer: (id: string, dir: number) => void;
   setLayerVisible: (id: string, visible: boolean) => void;
-  setLayerOpacity: (id: string, opacity: number) => void;
   setLayerBlend: (id: string, blend: GlobalCompositeOperation) => void;
 
   // view / interaction state (not part of the scene document, not undoable)
@@ -28,14 +56,41 @@ interface StudioState {
   brushSize: number;
   brushErase: boolean;
   maskVisible: boolean;
+  timelineHeight: number;
   toggleGrid: () => void;
   setBrushSize: (v: number) => void;
   setBrushErase: (v: boolean) => void;
   setMaskVisible: (v: boolean) => void;
+  setTimelineHeight: (v: number) => void;
 
-  setConstParam: (layerId: string, key: string, value: unknown) => void;
-  toggleParamAnimated: (layerId: string, key: string, t: number) => void;
-  upsertKeyframe: (layerId: string, key: string, t: number, value: unknown) => void;
+  setConstParam: (layerId: string, key: string, value: unknown, slot?: Slot) => void;
+  /** Write a value to the base mode *and* the morph target (palette, seed, …). */
+  setSharedParam: (layerId: string, key: string, value: unknown) => void;
+  toggleParamAnimated: (layerId: string, key: string, t: number, slot?: Slot) => void;
+  upsertKeyframe: (layerId: string, key: string, t: number, value: unknown, slot?: Slot) => void;
+
+  // keyframe editing (timeline)
+  selectTimeline: (sel: TimelineSel) => void;
+  addKeyframeAt: (layerId: string, slot: Slot, key: string, t: number) => void;
+  dragKeyframe: (layerId: string, slot: Slot, key: string, index: number, t: number) => void;
+  deleteKeyframe: (layerId: string, slot: Slot, key: string, index: number) => void;
+  setKeyframeEase: (
+    layerId: string,
+    slot: Slot,
+    key: string,
+    index: number,
+    side: 'in' | 'out',
+    curve: EaseHalf,
+  ) => void;
+  setKeyframeHold: (layerId: string, slot: Slot, key: string, index: number, hold: boolean) => void;
+  setTrackEasing: (layerId: string, slot: Slot, key: string, out: EaseHalf, easeIn: EaseHalf) => void;
+
+  // mode morph (symbols → particles inside one layer)
+  setMorphMode: (layerId: string, mode: string | null) => void;
+  setMorphRange: (layerId: string, start: number, end: number) => void;
+  setMorphStyle: (layerId: string, style: MorphStyle) => void;
+  setMorphEase: (layerId: string, side: 'in' | 'out', curve: EaseHalf) => void;
+
   setLayerMode: (layerId: string, mode: string) => void;
   setSpawn: (layerId: string, spawn: SpawnZone) => void;
   setBackground: (bg: string | null) => void;
@@ -43,6 +98,7 @@ interface StudioState {
   setDuration: (d: number) => void;
   setFps: (fps: number) => void;
   setPlayhead: (t: number) => void;
+  stepFrame: (delta: number) => void;
   play: () => void;
   pause: () => void;
   undo: () => void;
@@ -51,18 +107,41 @@ interface StudioState {
   surprise: () => void;
 }
 
+/** Read a param out of the slot it lives in. */
+export function readParam(layer: Layer, slot: Slot, key: string): Param<unknown> | undefined {
+  if (slot === 'layer') return key === 'opacity' ? (layer.opacity as Param<unknown>) : undefined;
+  if (slot === 'morph') return layer.morph?.params[key];
+  return layer.params[key];
+}
+
+/** Put a param back into the slot it lives in. */
+function writeParam(layer: Layer, slot: Slot, key: string, p: Param<unknown>): Layer {
+  if (slot === 'layer') {
+    return key === 'opacity' ? { ...layer, opacity: p as Param<number> } : layer;
+  }
+  if (slot === 'morph') {
+    if (!layer.morph) return layer;
+    return { ...layer, morph: { ...layer.morph, params: { ...layer.morph.params, [key]: p } } };
+  }
+  return { ...layer, params: { ...layer.params, [key]: p } };
+}
+
 /** Return a new scene with one layer param transformed by fn. */
 function withParam(
   scene: Scene,
   layerId: string,
+  slot: Slot,
   key: string,
   fn: (p: Param<unknown>) => Param<unknown>,
 ): Scene {
   return {
     ...scene,
-    layers: scene.layers.map((l) =>
-      l.id === layerId ? { ...l, params: { ...l.params, [key]: fn(l.params[key]) } } : l,
-    ),
+    layers: scene.layers.map((l) => {
+      if (l.id !== layerId) return l;
+      const cur = readParam(l, slot, key);
+      if (!cur) return l;
+      return writeParam(l, slot, key, fn(cur));
+    }),
   };
 }
 
@@ -70,8 +149,21 @@ const HISTORY_MAX = 80;
 const modeParamsCache: Record<string, Record<string, Record<string, Param<unknown>>>> = {};
 let layerSeq = 1;
 
-function withLayer(scene: Scene, id: string, fn: (l: Scene['layers'][number]) => Scene['layers'][number]): Scene {
+function withLayer(scene: Scene, id: string, fn: (l: Layer) => Layer): Scene {
   return { ...scene, layers: scene.layers.map((l) => (l.id === id ? fn(l) : l)) };
+}
+
+function withMorph(scene: Scene, id: string, fn: (m: LayerMorph) => LayerMorph): Scene {
+  return withLayer(scene, id, (l) => (l.morph ? { ...l, morph: fn(l.morph) } : l));
+}
+
+/** Params for a fresh morph target: keep the look-sharing bits from the base mode so
+    the handover reads as the *same* artwork changing form, not two unrelated ones. */
+const SHARED_KEYS = ['palette', 'fontKey', 'weight', 'glyphs', 'seed'];
+function seedMorphParams(base: Record<string, Param<unknown>>, targetMode: string) {
+  const params = getMode(targetMode).defaultParams();
+  for (const k of SHARED_KEYS) if (base[k] && params[k]) params[k] = base[k];
+  return params;
 }
 
 // ----- history: capture the PRE-change scene, debounced so a slider drag is one step -----
@@ -130,6 +222,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   playhead: 0,
   playing: false,
   imageVersion: 0,
+  selection: null,
   past: [],
   future: [],
 
@@ -154,6 +247,7 @@ export const useStudio = create<StudioState>((set, get) => ({
             blendMode: 'source-over',
             spawn: { kind: 'full' },
             params: getMode('generative').defaultParams(),
+            morph: null,
           },
         ],
       },
@@ -166,7 +260,7 @@ export const useStudio = create<StudioState>((set, get) => ({
     set((s) => {
       const layers = s.scene.layers.filter((l) => l.id !== id);
       const activeLayerId = s.activeLayerId === id ? layers[layers.length - 1].id : s.activeLayerId;
-      return { future: [], activeLayerId, scene: { ...s.scene, layers } };
+      return { future: [], activeLayerId, selection: null, scene: { ...s.scene, layers } };
     });
   },
 
@@ -187,11 +281,6 @@ export const useStudio = create<StudioState>((set, get) => ({
     set((s) => ({ future: [], scene: withLayer(s.scene, id, (l) => ({ ...l, visible })) }));
   },
 
-  setLayerOpacity: (id, opacity) => {
-    scheduleRecord(get().scene);
-    set((s) => ({ future: [], scene: withLayer(s.scene, id, (l) => ({ ...l, opacity: konst(opacity) })) }));
-  },
-
   setLayerBlend: (id, blend) => {
     recordNow(get().scene);
     set((s) => ({ future: [], scene: withLayer(s.scene, id, (l) => ({ ...l, blendMode: blend })) }));
@@ -201,41 +290,175 @@ export const useStudio = create<StudioState>((set, get) => ({
   brushSize: 80,
   brushErase: false,
   maskVisible: true,
+  timelineHeight: 268,
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
   setBrushSize: (v) => set({ brushSize: v }),
   setBrushErase: (v) => set({ brushErase: v }),
   setMaskVisible: (v) => set({ maskVisible: v }),
+  setTimelineHeight: (v) => set({ timelineHeight: Math.max(132, Math.min(620, Math.round(v))) }),
 
-  setConstParam: (layerId, key, value) => {
+  setConstParam: (layerId, key, value, slot = 'base') => {
     scheduleRecord(get().scene);
     set((s) => ({
       future: [],
-      scene: {
-        ...s.scene,
-        layers: s.scene.layers.map((l) =>
-          l.id === layerId ? { ...l, params: { ...l.params, [key]: konst(value) } } : l,
-        ),
-      },
+      scene: withParam(s.scene, layerId, slot, key, () => konst(value)),
+    }));
+  },
+
+  setSharedParam: (layerId, key, value) => {
+    scheduleRecord(get().scene);
+    set((s) => ({
+      future: [],
+      scene: withLayer(s.scene, layerId, (l) => {
+        const next = { ...l, params: { ...l.params, [key]: konst(value) } };
+        if (l.morph && key in l.morph.params) {
+          next.morph = { ...l.morph, params: { ...l.morph.params, [key]: konst(value) } };
+        }
+        return next;
+      }),
     }));
   },
 
   // Toggle a param between constant and animated (keyframed at the playhead).
-  toggleParamAnimated: (layerId, key, t) => {
+  toggleParamAnimated: (layerId, key, t, slot = 'base') => {
     recordNow(get().scene);
     set((s) => ({
       future: [],
-      scene: withParam(s.scene, layerId, key, (p) =>
+      selection: null,
+      scene: withParam(s.scene, layerId, slot, key, (p) =>
         p.kind === 'keys' ? flatten(p, t) : keyframed(resolveParam(p, t), t),
       ),
     }));
   },
 
   // Add/update a keyframe at the playhead (used when editing an animated param).
-  upsertKeyframe: (layerId, key, t, value) => {
+  upsertKeyframe: (layerId, key, t, value, slot = 'base') => {
     scheduleRecord(get().scene);
     set((s) => ({
       future: [],
-      scene: withParam(s.scene, layerId, key, (p) => withKeyframe(p, t, value)),
+      scene: withParam(s.scene, layerId, slot, key, (p) => withKeyframe(p, t, value)),
+    }));
+  },
+
+  selectTimeline: (sel) => set({ selection: sel }),
+
+  addKeyframeAt: (layerId, slot, key, t) => {
+    recordNow(get().scene);
+    set((s) => {
+      const layer = s.scene.layers.find((l) => l.id === layerId);
+      const cur = layer && readParam(layer, slot, key);
+      if (!cur) return {};
+      const value = resolveParam(cur, t);
+      const next = cur.kind === 'keys' ? withKeyframe(cur, t, value) : keyframed(value, t);
+      const scene = withParam(s.scene, layerId, slot, key, () => next);
+      const index = keysOf(next).findIndex((k) => Math.abs(k.t - t) < 1e-3);
+      return { future: [], scene, selection: { kind: 'key', layerId, slot, param: key, index } };
+    });
+  },
+
+  dragKeyframe: (layerId, slot, key, index, t) => {
+    scheduleRecord(get().scene);
+    set((s) => {
+      const layer = s.scene.layers.find((l) => l.id === layerId);
+      const cur = layer && readParam(layer, slot, key);
+      if (!cur || cur.kind !== 'keys') return {};
+      const moved = moveKeyframe(cur, index, t);
+      return {
+        future: [],
+        scene: withParam(s.scene, layerId, slot, key, () => moved.param),
+        // dragging past a neighbour renumbers keys — keep the selection on the same one
+        selection: { kind: 'key', layerId, slot, param: key, index: moved.index },
+      };
+    });
+  },
+
+  deleteKeyframe: (layerId, slot, key, index) => {
+    recordNow(get().scene);
+    set((s) => ({
+      future: [],
+      selection: null,
+      scene: withParam(s.scene, layerId, slot, key, (p) => removeKeyframe(p, index)),
+    }));
+  },
+
+  setKeyframeEase: (layerId, slot, key, index, side, curve) => {
+    recordNow(get().scene);
+    set((s) => ({
+      future: [],
+      scene: withParam(s.scene, layerId, slot, key, (p) => setKeyEase(p, index, side, curve)),
+    }));
+  },
+
+  setKeyframeHold: (layerId, slot, key, index, hold) => {
+    recordNow(get().scene);
+    set((s) => ({
+      future: [],
+      scene: withParam(s.scene, layerId, slot, key, (p) => setKeyHold(p, index, hold)),
+    }));
+  },
+
+  setTrackEasing: (layerId, slot, key, out, easeIn) => {
+    recordNow(get().scene);
+    set((s) => ({
+      future: [],
+      scene: withParam(s.scene, layerId, slot, key, (p) => setTrackEase(p, out, easeIn)),
+    }));
+  },
+
+  setMorphMode: (layerId, mode) => {
+    const cur = get().scene;
+    const layer = cur.layers.find((l) => l.id === layerId);
+    if (!layer) return;
+    recordNow(cur);
+    set((s) => ({
+      future: [],
+      selection: mode ? { kind: 'morph', layerId } : null,
+      scene: withLayer(s.scene, layerId, (l) => {
+        if (!mode) return { ...l, morph: null };
+        // Reuse the existing target params when only re-picking the same mode.
+        const params = l.morph?.mode === mode ? l.morph.params : seedMorphParams(l.params, mode);
+        const d = s.scene.duration;
+        return {
+          ...l,
+          morph: {
+            mode,
+            params,
+            // default: hold the symbols, hand over across the middle, land on particles
+            start: l.morph?.start ?? d * 0.2,
+            end: l.morph?.end ?? d * 0.8,
+            style: l.morph?.style ?? 'dissolve',
+            easeOut: l.morph?.easeOut ?? DEFAULT_EASE,
+            easeIn: l.morph?.easeIn ?? DEFAULT_EASE,
+          },
+        };
+      }),
+    }));
+  },
+
+  setMorphRange: (layerId, start, end) => {
+    scheduleRecord(get().scene);
+    set((s) => {
+      const clamp = (v: number) => Math.max(0, Math.min(v, s.scene.duration));
+      // keep the range ordered — typing end < start in the inspector would otherwise
+      // leave a range that never hands over
+      const a = clamp(Math.min(start, end));
+      const b = clamp(Math.max(start, end));
+      return { future: [], scene: withMorph(s.scene, layerId, (m) => ({ ...m, start: a, end: b })) };
+    });
+  },
+
+  setMorphStyle: (layerId, style) => {
+    recordNow(get().scene);
+    set((s) => ({ future: [], scene: withMorph(s.scene, layerId, (m) => ({ ...m, style })) }));
+  },
+
+  setMorphEase: (layerId, side, curve) => {
+    recordNow(get().scene);
+    set((s) => ({
+      future: [],
+      scene: withMorph(s.scene, layerId, (m) =>
+        side === 'in' ? { ...m, easeIn: curve } : { ...m, easeOut: curve },
+      ),
     }));
   },
 
@@ -248,6 +471,7 @@ export const useStudio = create<StudioState>((set, get) => ({
     const nextParams = modeParamsCache[layerId][mode] ?? getMode(mode).defaultParams();
     set((s) => ({
       future: [],
+      selection: null,
       scene: {
         ...s.scene,
         layers: s.scene.layers.map((l) => (l.id === layerId ? { ...l, mode, params: nextParams } : l)),
@@ -275,7 +499,14 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   setDuration: (d) => {
     scheduleRecord(get().scene);
-    set((s) => ({ future: [], scene: { ...s.scene, duration: Math.max(0.1, d) } }));
+    set((s) => {
+      const duration = Math.max(0.1, d);
+      return {
+        future: [],
+        scene: { ...s.scene, duration },
+        playhead: Math.min(s.playhead, duration),
+      };
+    });
   },
 
   setFps: (fps) => {
@@ -283,7 +514,16 @@ export const useStudio = create<StudioState>((set, get) => ({
     set((s) => ({ future: [], scene: { ...s.scene, fps: Math.max(1, Math.min(60, Math.round(fps))) } }));
   },
 
-  setPlayhead: (t) => set({ playhead: t }),
+  setPlayhead: (t) =>
+    set((s) => ({ playhead: Math.max(0, Math.min(s.scene.duration, t)) })),
+
+  stepFrame: (delta) =>
+    set((s) => {
+      const fps = s.scene.fps || 25;
+      const f = Math.round(s.playhead * fps) + delta;
+      return { playing: false, playhead: Math.max(0, Math.min(s.scene.duration, f / fps)) };
+    }),
+
   play: () => set({ playing: true }),
   pause: () => set({ playing: false }),
 
@@ -292,7 +532,7 @@ export const useStudio = create<StudioState>((set, get) => ({
     set((s) => {
       if (!s.past.length) return {};
       const prev = s.past[s.past.length - 1];
-      return { scene: prev, past: s.past.slice(0, -1), future: [s.scene, ...s.future] };
+      return { scene: prev, past: s.past.slice(0, -1), future: [s.scene, ...s.future], selection: null };
     });
   },
 
@@ -300,12 +540,12 @@ export const useStudio = create<StudioState>((set, get) => ({
     set((s) => {
       if (!s.future.length) return {};
       const next = s.future[0];
-      return { scene: next, future: s.future.slice(1), past: [...s.past, s.scene] };
+      return { scene: next, future: s.future.slice(1), past: [...s.past, s.scene], selection: null };
     }),
 
   reset: () => {
     recordNow(get().scene);
-    set({ future: [], scene: defaultScene(), activeLayerId: 'layer-1' });
+    set({ future: [], scene: defaultScene(), activeLayerId: 'layer-1', selection: null });
   },
 
   surprise: () => {

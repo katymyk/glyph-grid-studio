@@ -35,8 +35,11 @@ export function Stage() {
     if (!ctx) return;
     paintScene(ctx, scene, playhead);
     if (showGrid) {
-      const cols = Number(resolveParam(layer.params.cols as Param<number>, playhead));
-      const rows = Number(resolveParam(layer.params.rows as Param<number>, playhead));
+      // particle mode has no grid params — the guide simply doesn't apply there
+      const colsP = layer.params.cols as Param<number> | undefined;
+      const rowsP = layer.params.rows as Param<number> | undefined;
+      const cols = colsP ? Number(resolveParam(colsP, playhead)) : 0;
+      const rows = rowsP ? Number(resolveParam(rowsP, playhead)) : 0;
       if (cols > 0 && rows > 0) {
         ctx.save();
         ctx.strokeStyle = 'rgba(120,120,120,.28)';

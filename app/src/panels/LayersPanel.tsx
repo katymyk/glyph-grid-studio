@@ -31,11 +31,20 @@ export function LayersPanel() {
   const remove = useStudio((s) => s.removeLayer);
   const move = useStudio((s) => s.moveLayer);
   const setVisible = useStudio((s) => s.setLayerVisible);
-  const setOpacity = useStudio((s) => s.setLayerOpacity);
   const setBlend = useStudio((s) => s.setLayerBlend);
+  const setConstParam = useStudio((s) => s.setConstParam);
+  const upsertKeyframe = useStudio((s) => s.upsertKeyframe);
+  const toggleParamAnimated = useStudio((s) => s.toggleParamAnimated);
+  const playhead = useStudio((s) => s.playhead);
 
   const active = layers.find((l) => l.id === activeId) ?? layers[0];
-  const opacity = resolveParam(active.opacity as Param<number>, 0);
+  // opacity is a normal animatable param in the 'layer' slot — key it to fade a layer
+  const animated = active.opacity.kind === 'keys';
+  const opacity = resolveParam(active.opacity as Param<number>, playhead);
+  const setOpacity = (v: number) =>
+    animated
+      ? upsertKeyframe(active.id, 'opacity', playhead, v, 'layer')
+      : setConstParam(active.id, 'opacity', v, 'layer');
 
   return (
     <Panel title="Layers" defaultOpen>
@@ -90,7 +99,9 @@ export function LayersPanel() {
           min={0}
           max={100}
           format={(v) => `${v}%`}
-          onChange={(v) => setOpacity(active.id, v / 100)}
+          onChange={(v) => setOpacity(v / 100)}
+          animated={animated}
+          onToggleAnimate={() => toggleParamAnimated(active.id, 'opacity', playhead, 'layer')}
         />
         <Field label="Blend mode">
           <select

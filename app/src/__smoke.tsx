@@ -14,6 +14,10 @@ import { sceneToSVG } from './engine/export/svg';
 import { sceneToJSON } from './engine/export/json';
 import { konst } from './domain/params';
 import { primeImage, primeSample, sampleSource } from './engine/imageSample';
+import { beginSourceProbe, sourcePending } from './engine/sourceReady';
+import { clipMs, isVideoRef, videoInfo, type VideoInfo } from './engine/videoSource';
+import { settleSources } from './engine/export/frames';
+import { mp4Supported, MP4_UNSUPPORTED, sceneToMP4 } from './engine/export/mp4';
 import type { Scene } from './domain/scene';
 
 let pass = 0;
@@ -59,6 +63,12 @@ ok('halftone declares image + srcTime (source panel + video seam)', (() => {
   const p = getMode('halftone').defaultParams();
   return 'image' in p && 'srcTime' in p;
 })());
+// Both source-reading modes must carry srcTime, or the Clip panel dereferences a param
+// that mode doesn't declare and the slider silently binds to nothing.
+ok('ascii declares image + srcTime too', (() => {
+  const p = getMode('ascii').defaultParams();
+  return 'image' in p && 'srcTime' in p;
+})());
 
 // --------------------------------------------------------------- render tree
 sec('render the app with a halftone layer selected');
@@ -77,7 +87,7 @@ ok('renderToString does not throw', (() => {
 })());
 ok('sidebar shows the Halftone mode button', html.includes('Halftone'));
 ok('sidebar shows the Source panel', html.includes('Source'));
-ok('no image yet -> the empty-source copy is shown', html.includes('No image yet'));
+ok('no source yet -> the empty-source copy is shown', html.includes('No source yet'));
 ok('dot-screen controls are present under algo=halftone', html.includes('Screen angle'),
   html.includes('Screen angle') ? '' : 'missing');
 ok('pixel-size control is hidden under algo=halftone', !html.includes('Pixel size'));
@@ -132,7 +142,7 @@ ok('an uncapped cell is not labelled capped', !readoutText(html).includes('cappe
 // ------------------------------------------------------------------- with art
 sec('the no-source path (actual pixel sampling needs a browser)');
 const URL_A = 'data:image/png;base64,STUB';
-ok('sampleSource(null) is null, not a throw', sampleSource(null, 8, 8, 0) === null);
+ok('sampleSource(null) is null, not a throw', sampleSource(null, 8, 8, 0, 25) === null);
 ok('halftone with no image yields no placements, whatever the algo', (() => {
   for (const algo of ['halftone', 'floyd', 'atkinson', 'bayer4', 'bayer8', 'noise']) {
     const got = getMode('halftone').placements(
@@ -152,6 +162,73 @@ ok('the frame index is derived from time + srcTime (the video seam)', (() => {
 })());
 void primeImage;
 s().setConstParam(id, 'image', null);
+
+// ------------------------------------------------------------------ video sources
+sec('video refs (decoding needs a browser; routing and timing do not)');
+ok('a video ref is recognised, a data URL is not',
+  isVideoRef('video:1') && !isVideoRef(URL_A) && !isVideoRef(null) && !isVideoRef(7));
+ok('an unregistered ref samples to null rather than throwing',
+  sampleSource('video:404', 8, 8, 0, 25) === null);
+// If a dead ref counted as pending, every export would spin out its retry budget on a
+// clip that is never coming back.
+ok('an unregistered ref is NOT pending (an export must not wait for it forever)', (() => {
+  beginSourceProbe();
+  sampleSource('video:404', 8, 8, 0, 25);
+  return sourcePending() === 0;
+})());
+ok('an undecoded image IS pending (an export must wait for it)', (() => {
+  beginSourceProbe();
+  try {
+    sampleSource('data:image/png;base64,NOTDECODED', 8, 8, 0, 25);
+  } catch {
+    // node has no `Image` to kick the decode off with. Irrelevant to what is being
+    // asserted: pending is raised BEFORE any decode work, which is the contract — an
+    // export must not be able to observe a not-ready source as ready.
+  }
+  return sourcePending() === 1;
+})());
+ok('a primed sample is a hit, so it is not pending', (() => {
+  const g = { cols: 4, rows: 4, lum: new Float32Array(16), rgb: new Uint8ClampedArray(48),
+    alpha: new Uint8ClampedArray(16).fill(255) };
+  primeSample('primed://x', g);
+  beginSourceProbe();
+  const got = sampleSource('primed://x', 4, 4, 0, 25);
+  return got === g && sourcePending() === 0;
+})());
+ok('videoInfo on an unknown ref is null', videoInfo('video:404') === null);
+
+sec('clip timing: frame index -> position in the clip');
+{
+  const clip: VideoInfo = { ref: 'video:1', name: 'c.mp4', width: 640, height: 360, duration: 3 };
+  ok('frame 0 is the start', clipMs(clip, 0, 25) === 0);
+  ok('frame 25 @25fps is one second in', clipMs(clip, 25, 25) === 1000);
+  ok('the same second is the same position at another frame rate',
+    clipMs(clip, 30, 30) === clipMs(clip, 25, 25));
+  // A short clip on a long timeline holds rather than blanking, and every held frame
+  // resolves to ONE position — so the tail of a 10s comp costs one decode, not 175.
+  const tail = clipMs(clip, 250, 25);
+  ok('past the end the last frame is held', tail > 2900 && tail < 3000, `${tail}ms`);
+  ok('the whole held tail is one cache position', clipMs(clip, 400, 25) === tail);
+  ok('it never seeks exactly to duration (which can decode nothing)', tail < 3000);
+  ok('a negative offset clamps to the start', clipMs(clip, -50, 25) === 0);
+  ok('an unknown-length clip pins to the start rather than guessing',
+    clipMs({ ...clip, duration: 0 }, 90, 25) === 0);
+}
+
+sec('the Clip panel appears only for a video source');
+{
+  const st = useStudio.getState();
+  st.reset();
+  const lid = useStudio.getState().scene.layers[0].id;
+  st.setLayerMode(lid, 'halftone');
+  st.setConstParam(lid, 'image', URL_A);
+  ok('an image source shows no Source time slider', !render().includes('Source time'));
+  st.setConstParam(lid, 'image', 'video:1');
+  ok('a video source shows it', render().includes('Source time'));
+  st.setLayerMode(lid, 'ascii');
+  ok('and in ascii mode too', render().includes('Source time'));
+  st.reset();
+}
 
 // Feed placements directly to prove the painter/exporters handle every shape.
 sec('painter + exporters over each shape');
@@ -315,10 +392,14 @@ sec('store behaviour');
   const lid = useStudio.getState().scene.layers[0].id;
   st.setLayerMode(lid, 'ascii');
   st.setConstParam(lid, 'image', URL_A);
+  st.setConstParam(lid, 'srcTime', 4.5);
   st.setLayerMode(lid, 'halftone');
   const img = useStudio.getState().scene.layers[0].params.image;
   ok('ascii -> halftone carries the image over',
     img !== undefined && (img as { value?: unknown }).value === URL_A);
+  // Where you are in a clip belongs to the source, so a trim must survive a mode switch.
+  ok('...and carries the clip offset with it',
+    (useStudio.getState().scene.layers[0].params.srcTime as { value?: unknown })?.value === 4.5);
 
   st.setMorphMode(lid, 'ascii');
   const m = useStudio.getState().scene.layers[0].morph;
@@ -511,7 +592,43 @@ sec('REGRESSION: switching modes must not resurrect a stale image');
   st.reset();
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
-// node only; declared inline so this file needs no @types/node
-const proc = (globalThis as { process?: { exitCode?: number } }).process;
-if (fail && proc) proc.exitCode = 1;
+// ------------------------------------------------- export readiness (async)
+/** The build target has no top-level await, so the async checks live in here and the
+    summary is printed after they finish. */
+async function asyncChecks(): Promise<void> {
+  sec('exports settle their sources before writing a frame');
+  {
+    const st = useStudio.getState();
+    st.reset();
+    const lid = useStudio.getState().scene.layers[0].id;
+
+    ok('a scene with no source settles at once', await settleSources(useStudio.getState().scene, 0));
+
+    st.setLayerMode(lid, 'halftone');
+    st.setConstParam(lid, 'image', 'video:404');
+    // A dead ref is not pending, so this must return promptly rather than burn the retry
+    // budget: an export of a scene whose clip is gone should finish, not hang.
+    ok('a scene whose clip is gone still settles (no hang)',
+      await settleSources(useStudio.getState().scene, 0));
+    st.reset();
+  }
+
+  sec('MP4 export degrades honestly without WebCodecs');
+  {
+    // node has no VideoEncoder, which is exactly the case a browser without WebCodecs hits.
+    ok('mp4Supported() is false here', mp4Supported() === false);
+    const msg = await sceneToMP4(useStudio.getState().scene).then(
+      () => 'resolved',
+      (e: unknown) => (e instanceof Error ? e.message : String(e)),
+    );
+    ok('sceneToMP4 rejects with the explanation the panel shows, not a TypeError',
+      msg === MP4_UNSUPPORTED, msg.slice(0, 60));
+  }
+}
+
+void asyncChecks().then(() => {
+  console.log(`\n${pass} passed, ${fail} failed`);
+  // node only; declared inline so this file needs no @types/node
+  const proc = (globalThis as { process?: { exitCode?: number } }).process;
+  if (fail && proc) proc.exitCode = 1;
+});

@@ -18,7 +18,8 @@ import type { EaseHalf } from '../domain/easing';
 import { defaultScene } from '../domain/defaults';
 import type { Layer, LayerMorph, MorphStyle, Scene, SpawnZone } from '../domain/scene';
 import { getMode } from '../engine/modes';
-import { onSampleReady } from '../engine/imageSample';
+import { onSourceReady } from '../engine/sourceReady';
+import { clearVideoFrames } from '../engine/videoSource';
 import { parseGlyphs } from '../lib/glyphs';
 
 /**
@@ -181,9 +182,11 @@ function withMorph(scene: Scene, id: string, fn: (m: LayerMorph) => LayerMorph):
  * Params a new set inherits from the one it replaces, so switching or morphing a
  * layer's mode reads as the SAME artwork changing form rather than two unrelated
  * ones. `image` is included because otherwise flipping a layer from ASCII to
- * Halftone silently blanks the canvas and asks for the picture to be uploaded again.
+ * Halftone silently blanks the canvas and asks for the picture to be uploaded again —
+ * and `srcTime` follows it, because where you are in a clip belongs to the source, not
+ * to whichever mode is screening it.
  */
-const INHERITED_KEYS = ['palette', 'fontKey', 'weight', 'glyphs', 'seed', 'image'];
+const INHERITED_KEYS = ['palette', 'fontKey', 'weight', 'glyphs', 'seed', 'image', 'srcTime'];
 
 /** Copy the inherited params from `base` onto `params`. Keys the target set doesn't
     declare are skipped, so a mode never gains a param it doesn't understand. */
@@ -614,6 +617,10 @@ export const useStudio = create<StudioState>((set, get) => ({
     // The per-layer mode-param memory holds whole uploaded images; keeping it across
     // a reset would both resurrect old params and pin that memory for the tab's life.
     for (const k of Object.keys(modeParamsCache)) delete modeParamsCache[k];
+    // Decoded video frames are the largest thing the app holds (~100MB when full) and
+    // are pure cache. The clips themselves stay registered — an undo can bring a scene
+    // that references one straight back.
+    clearVideoFrames();
     set({ future: [], scene: defaultScene(), activeLayerId: 'layer-1', selection: null });
   },
 
@@ -623,7 +630,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 }));
 
-onSampleReady(() => useStudio.setState((s) => ({ imageVersion: s.imageVersion + 1 })));
+onSourceReady(() => useStudio.setState((s) => ({ imageVersion: s.imageVersion + 1 })));
 
 /** The currently-selected layer (falls back to the first if the id is stale). */
 export function useActiveLayer() {

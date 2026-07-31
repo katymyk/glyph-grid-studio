@@ -1,7 +1,7 @@
 import GIF from 'gif.js';
 import workerUrl from 'gif.js/dist/gif.worker.js?url';
 import type { Scene } from '../../domain/scene';
-import { paintScene } from '../paint';
+import { paintSettled } from './frames';
 
 /** Render the scene across one loop into an animated GIF. Frame times step by 1/fps.
     The worker is bundled + same-origin (via ?url), so no cross-origin worker issue. */
@@ -22,11 +22,10 @@ export async function sceneToGIF(scene: Scene, onProgress?: (p: number) => void)
   const ctx = off.getContext('2d');
   if (!ctx) throw new Error('no 2d context');
 
-  // FUTURE (video source): this loop paints frames synchronously, so a source that
-  // is still decoding would silently emit blank frames. A video source needs a
-  // per-frame readiness await here (see engine/imageSample.ts sampleSource).
+  // paintSettled, not paintScene: a video frame still seeking (or an image still
+  // decoding) would otherwise be encoded as a blank or a duplicate.
   for (let f = 0; f < total; f++) {
-    paintScene(ctx, scene, f / fps);
+    await paintSettled(ctx, scene, f / fps);
     // GIF has no alpha channel here: gif.js is configured without a transparent
     // index, so it reads raw RGBA and quantizes fully-transparent pixels (0,0,0,0)
     // to black. Compositing the frame over white keeps a transparent-background

@@ -35,10 +35,9 @@ import type { ModeContext, RenderMode } from './types';
 export type HalftoneAlgo = 'halftone' | DitherAlgo;
 
 export interface HalftoneParams {
-  image: string | null; // data URL
-  /** Source time offset in seconds. Inert for a still image — it exists so a video
-      source (next iteration) is retimeable on the existing keyframe timeline without
-      any new machinery: keyframe this and you have scrubbed the clip. */
+  image: string | null; // image data URL, or a `video:N` reference
+  /** Offset into the source clip, in seconds. Inert for a still image. Keyframe it and
+      you have retimed the clip — no new machinery, it rides the existing timeline. */
   srcTime: number;
   algo: HalftoneAlgo;
 
@@ -188,14 +187,15 @@ export const halftoneMode: RenderMode = {
     if (!p.image) return [];
     const { width: W, height: H } = ctx;
     // Quantise to a frame so the preview and every exported frame ask the source for
-    // byte-identical data. Inert for stills; the hook a video source needs.
-    const frame = Math.round((ctx.time + p.srcTime) * (ctx.fps || 25));
+    // identical data. Inert for stills; how a video source is addressed.
+    const fps = ctx.fps || 25;
+    const frame = Math.round((ctx.time + p.srcTime) * fps);
 
     if (p.algo === 'halftone') {
       // One working grid per (image, canvas size): `cell` and `angle` are the params
       // people animate, and the sample cache is keyed by grid size, so a resolution
       // that tracked `cell` would re-downscale the source on most frames of a keyframe.
-      const field = sampleSource(p.image, workingWidth(W), workingHeight(W, H), frame);
+      const field = sampleSource(p.image, workingWidth(W), workingHeight(W, H), frame, fps);
       if (!field) return []; // still decoding — a repaint fires when it lands
       return buildDots(field, W, H, {
         cell: effectiveCell(W, H, Math.max(1, p.cell), p.lattice, p.maxElements),
@@ -223,6 +223,7 @@ export const halftoneMode: RenderMode = {
       Math.max(2, Math.round(W / px)),
       Math.max(2, Math.round(H / px)),
       frame,
+      fps,
     );
     if (!field) return [];
     return buildDither(

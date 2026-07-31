@@ -196,7 +196,10 @@ glyph-grid-studio/
       engine/
         rng.ts                # makeRNG
         cells.ts              # buildCells
-        image.ts              # sampleImage + luminance/ramp helpers
+        sampleGrid.ts         # THE downscale: any drawable → cols×rows lum/rgb/alpha
+        imageSample.ts        # sampleSource(): the one seam that knows image vs video
+        videoSource.ts        # clip registry, serial seeking, byte-budgeted frame LRU
+        sourceReady.ts        # readiness notify + the export "is this frame final?" probe
         placements.ts         # resolvePlacements(scene, t) → Placement[]
         modes/
           index.ts            # registry: registerMode / getMode / listModes
@@ -205,7 +208,8 @@ glyph-grid-studio/
           particle.ts         # (phase 4)
         paint.ts              # paintToCanvas(ctx, placements)
         export/
-          svg.ts  png.ts  json.ts  gif.ts  sequence.ts
+          frames.ts           # paintSettled / settleSources — no half-decoded frames
+          svg.ts  png.ts  json.ts  gif.ts  sequence.ts  mp4.ts
       state/
         store.ts              # zustand: scene, selection, playhead, history, actions
       ui/                     # DESIGN SYSTEM over Base UI (customization seam)
@@ -373,21 +377,82 @@ it is **one cap for preview and export** (a looser export cap would be exactly t
 drift §6 exists to prevent), and it is **continuous**, so animating `cell` through the
 boundary doesn't snap.
 
-### 13e. Designed for video, not yet implemented
+## 14. Video sources
 
-The next iteration turns a loaded video into halftone frame by frame. The seam is in
-place so the mode needs no changes:
+ASCII and Halftone read a **source**, which is either a still image or a video clip. The
+modes cannot tell which, and that is the whole design: both ask
+`sampleSource(source, cols, rows, frame, fps)` for a cols×rows luminance grid, and every
+difference between the two kinds is resolved below that call.
 
-- `ModeContext` carries `fps`, and modes ask for a **frame index**
-  (`round((time + srcTime) * fps)`), not seconds — so preview and every exported frame
-  request byte-identical source data.
-- All sampling goes through `sampleSource(image, cols, rows, frame)` in
-  `imageSample.ts`. Images ignore `frame`; that function is the only place a video
-  branch is added. Its "return null while not ready, notify on ready" contract already
-  covers async seeking, and the mode already returns `[]` on null.
-- `srcTime` is an animatable param with no sidebar control, so retiming a clip on the
-  timeline needs no timeline code — `rowsForLayer` picks up any keyframed param.
-- Two things the video work *will* have to touch, both flagged in-code: the frame
-  cache needs eviction (a ring buffer around the playhead, not the unbounded `Map`),
-  and `export/sequence.ts` + `export/gif.ts` paint frames in a tight synchronous loop,
-  so they need a per-frame readiness await.
+- **A frame index, not a time.** Modes compute `round((time + srcTime) * fps)` and ask for
+  that. Quantising at the mode means the preview and every exported frame request the
+  same source data, and `srcTime` — an ordinary animatable param — retimes a clip on the
+  existing timeline with no timeline code at all.
+- **The source is a short ref, not the bytes.** An image is a data URL in the `image`
+  param; a video is registered out of band and referenced as `video:1`. Same param, same
+  type. Inlining a clip would put tens of megabytes in the scene, and the scene is cloned
+  onto the undo stack on every edit.
+- **One downscale.** `sampleGrid.ts` owns the cover-fit + Rec.709 read-out for both kinds,
+  so a halftone of a PNG and a halftone of frame 40 of an MP4 are screened identically.
+  Two copies of that maths is exactly the drift §6 exists to prevent.
+
+### 14a. Not-ready is a normal outcome
+
+Both kinds can fail to answer immediately — an image may be decoding, a video frame may be
+seeking — and the difference between the live canvas and an export is what `sourceReady.ts`
+exists for.
+
+- The canvas can afford to paint what it has: a not-ready source returns null (image) or
+  **the last frame at that grid** (video) and calls `notifySourceReady()` when the real
+  data lands, which repaints. Holding the previous frame rather than returning null is
+  what keeps a scrub from flickering to empty on every frame.
+- An export cannot, because it writes each frame exactly once. So a renderer that had to
+  substitute or skip raises `markSourcePending()`, and `export/frames.ts` brackets a paint
+  with `beginSourceProbe()` / `sourcePending()` and repaints until nothing is pending.
+  **Every animated export goes through `paintSettled`**, so a held frame can never reach a
+  file. The exporters stay ignorant of grid sizes, frame indices and decode state — which
+  is what lets `sampleSource` remain the only place that knows video exists.
+- Both waits are bounded. `waitForSourceReady` times out and `MAX_ROUNDS` caps the retries,
+  so a corrupt clip or a dropped seek costs a frame instead of hanging the export.
+
+### 14b. Seeking, and the two caches
+
+- **Seeks are serial and coalesced.** One `HTMLVideoElement` services one seek at a time,
+  so requests queue — bounded, and LIFO, because during a scrub the frame under the
+  playhead now matters more than the ones it flew past. When the queue drains, a few frames
+  ahead of the playhead are read in, which turns playback and a sequence export from a
+  seek-per-frame stall into a steady walk.
+- **`seeked` is not enough.** It says the seek completed, not that the frame was
+  *presented*; drawing on it alone can capture the previous frame. `requestVideoFrameCallback`
+  is the real signal, raced against a timer.
+- **Two caches, deliberately different.** Still-image samples are cached forever — a
+  handful of grid sizes, and the picture never changes. Video frames are ~4.7MB each at
+  1024×576, so they get a byte-budgeted LRU keyed by *clip position in milliseconds*, not
+  by scene frame. That key is why the held tail of a short clip on a long timeline costs
+  one decode rather than one per frame.
+- **Past the end the last frame is held**, rather than blanking, so a 3s clip on a 10s comp
+  freezes instead of disappearing mid-way.
+
+Determinism narrows here, honestly: same machine + same scene still reproduces exactly
+(verified by scrubbing away and back), but byte-identical output *across browsers* is not on
+offer for video — decoders differ.
+
+## 15. MP4 export
+
+`export/mp4.ts` renders the loop and encodes it with WebCodecs, muxing MP4 in the browser.
+
+- **Not `MediaRecorder`.** That records in realtime, so the file's timing is whatever the
+  machine managed while rendering — and a halftone frame can take 200ms. WebCodecs encodes
+  frame by frame at whatever pace the render takes, so the output is exactly
+  `fps × duration` frames long.
+- **The muxer is dynamically imported.** It is the largest dependency in the app and only
+  this button needs it, so the cost lands on the click, not on first paint (it builds as its
+  own chunk).
+- **Even dimensions.** H.264 rejects an odd width or height, so the encode canvas rounds
+  *up* to even and the paint is scaled to fit — cropping would drop a column, padding would
+  leave a seam.
+- **No alpha.** Like GIF, a transparent scene is composited over white and the button says
+  so.
+- **Honest degradation.** `mp4Supported()` is a synchronous check that disables the button
+  without loading the encoder, and codecs are tried in order (`avc` first — it is what
+  After Effects and Premiere want) with a readable message if none work.

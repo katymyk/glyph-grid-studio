@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import type { Scene } from '../../domain/scene';
-import { paintScene } from '../paint';
+import { paintSettled } from './frames';
 
 /** Render the scene across one loop as a zip of lossless PNG frames (for After Effects). */
 export async function sceneToSequence(scene: Scene, onProgress?: (p: number) => void): Promise<Blob> {
@@ -13,11 +13,10 @@ export async function sceneToSequence(scene: Scene, onProgress?: (p: number) => 
   const ctx = off.getContext('2d');
   if (!ctx) throw new Error('no 2d context');
 
-  // FUTURE (video source): frames are painted synchronously, so a source still
-  // decoding would silently emit blank frames. A video source needs a per-frame
-  // readiness await here (see engine/imageSample.ts sampleSource).
+  // paintSettled, not paintScene: a video frame still seeking (or an image still
+  // decoding) would otherwise be written to the zip as a blank or a duplicate.
   for (let f = 0; f < total; f++) {
-    paintScene(ctx, scene, f / fps);
+    await paintSettled(ctx, scene, f / fps);
     const blob = await new Promise<Blob>((resolve, reject) =>
       off.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png'),
     );

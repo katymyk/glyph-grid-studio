@@ -93,11 +93,25 @@ functions into a Node script if needed.
 - `npm run check:smoke` — a Vite SSR build of `src/__smoke.tsx`, then `node`. This is
   the only headless way to catch runtime faults `tsc` cannot see: a panel dereferencing
   a param a mode doesn't declare, a mode-registry import cycle, conditional-control
-  visibility, and the painter/exporter behaviour for every placement shape.
+  visibility, and the painter/exporter behaviour for every placement shape. Video is
+  covered here only as far as it can be without a browser: ref routing, the readiness
+  probe's pending/not-pending contract, and clip frame timing (`clipMs` is exported
+  purely because it is the one pure part). Decoding and seeking are not.
 
 Still browser-only, and worth doing by hand after engine changes: interactive latency
-while dragging sliders, and the five export buttons (especially transparent-background
-PNG/SVG and the GIF-on-white path).
+while dragging sliders, and the six export buttons (especially transparent-background
+PNG/SVG and the GIF/MP4-on-white paths).
+
+For a **video source** specifically, the things that only a browser can tell you — and the
+checks that matter, because each one has a plausible silent failure:
+
+1. Load a clip in Halftone. Step the playhead and confirm the art changes; step back and
+   confirm the earlier frame returns exactly. (A seek that never lands looks like a still.)
+2. Export a PNG sequence and confirm the frames differ from each other. This is the
+   decisive one: a broken `paintSettled` gives a zip with the right frame *count* and the
+   same picture in every file.
+3. Export MP4 and check the frame count is `fps × duration` and that it opens in a player.
+4. Scrub fast, then let go — the canvas should lag and catch up, never blank or flicker.
 
 ## Deployment
 

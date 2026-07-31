@@ -109,6 +109,8 @@
 
 .segment {
   display: flex;
+  /* wraps rather than crushing the labels once a mode picker holds four-plus items */
+  flex-wrap: wrap;
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -117,8 +119,9 @@
 }
 .segmentItem {
   flex: 1;
+  min-width: 62px;
   text-align: center;
-  padding: 7px 0;
+  padding: 7px 2px;
   font-size: 11px;
   color: var(--muted);
   background: none;
@@ -126,6 +129,28 @@
   border-radius: 5px;
   cursor: pointer;
   font-family: var(--diatype);
+}
+
+/* derived read-only text (e.g. the effective screen pitch after the element cap) */
+.readout {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 2px;
+  padding: 6px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 10.5px;
+}
+.readoutLabel {
+  color: var(--muted);
+}
+.readoutValue {
+  color: var(--text);
+  font-family: var(--diamono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 .segmentOn {
   background: var(--accent);

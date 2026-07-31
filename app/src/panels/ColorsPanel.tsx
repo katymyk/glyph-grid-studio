@@ -15,7 +15,10 @@ export function ColorsPanel() {
   const [lastBg, setLastBg] = useState('#ffffff');
 
   const layer = useActiveLayer();
-  const palette = (resolveParam(layer.params.palette as Param<string[]>, 0) as string[]) ?? [];
+  // Guard the read, not the result: resolveParam dereferences the param, so a mode
+  // that doesn't declare `palette` would throw here and take the whole sidebar down.
+  const paletteParam = layer.params.palette as Param<string[]> | undefined;
+  const palette = paletteParam ? ((resolveParam(paletteParam, 0) as string[]) ?? []) : [];
   const transparent = scene.background === null;
   // one palette per layer — the morph target shares it, so a handover keeps its colors
   const setPalette = (arr: string[]) => setSharedParam(layer.id, 'palette', arr);

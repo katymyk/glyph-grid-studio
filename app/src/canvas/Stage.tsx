@@ -1,7 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { paintScene } from '../engine/paint';
 import { resolveParam, type Param } from '../domain/params';
+import { ROW_PITCH, effectiveCell, type Lattice } from '../engine/halftone/screen';
 import { useStudio, useActiveLayer } from '../state/store';
+
+/** Resolve an optional param at time t, falling back when the mode doesn't declare it. */
+function read<T>(p: Param<unknown> | undefined, t: number, fallback: T): T {
+  return p ? (resolveParam(p, t) as T) : fallback;
+}
 
 /** Canvas surface: main artwork canvas + a brush-mask overlay, both scaled to fit. */
 export function Stage() {
@@ -18,12 +24,15 @@ export function Stage() {
   const brushErase = useStudio((s) => s.brushErase);
   const maskVisible = useStudio((s) => s.maskVisible);
   const setSpawn = useStudio((s) => s.setSpawn);
+  const setElementCount = useStudio((s) => s.setElementCount);
 
   const layer = useActiveLayer();
   const spawn = layer.spawn;
   const brushActive = spawn.kind === 'brush';
   const brushMask = spawn.kind === 'brush' ? spawn.mask : null;
   const spawnInvert = spawn.kind === 'brush' ? spawn.invert : false;
+
+  const lastCountRef = useRef(-1);
 
   // paint artwork + optional grid guide (guide is live-only; exports use paintScene alone)
   useEffect(() => {
@@ -33,13 +42,47 @@ export function Stage() {
     if (c.height !== scene.height) c.height = scene.height;
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    paintScene(ctx, scene, playhead);
+    const drawn = paintScene(ctx, scene, playhead);
+    // Only touch the store when the number actually moved: every repaint would
+    // otherwise sweep all subscribers just to hand them the value they already had.
+    if (drawn !== lastCountRef.current) {
+      lastCountRef.current = drawn;
+      setElementCount(drawn);
+    }
     if (showGrid) {
       // particle mode has no grid params — the guide simply doesn't apply there
       const colsP = layer.params.cols as Param<number> | undefined;
       const rowsP = layer.params.rows as Param<number> | undefined;
-      const cols = colsP ? Number(resolveParam(colsP, playhead)) : 0;
-      const rows = rowsP ? Number(resolveParam(rowsP, playhead)) : 0;
+      let cols = colsP ? Number(resolveParam(colsP, playhead)) : 0;
+      let rows = rowsP ? Number(resolveParam(rowsP, playhead)) : 0;
+      // Halftone thinks in a screen pitch rather than cols/rows, so derive the guide
+      // from that — through effectiveCell, or the guide would draw the pitch the user
+      // asked for rather than the one being rendered. Only for the dot screen, and only
+      // when it is axis-aligned: an upright guide over a rotated lattice shows a grid
+      // the dots do not sit on.
+      const cellP = layer.params.cell as Param<number> | undefined;
+      if (!cols && cellP && read(layer.params.algo, playhead, 'halftone') === 'halftone') {
+        const angle = Number(read(layer.params.angle, playhead, 0));
+        if (Math.abs(angle % 90) < 0.01) {
+          const lattice = String(read(layer.params.lattice, playhead, 'square')) as Lattice;
+          const cell = effectiveCell(
+            scene.width,
+            scene.height,
+            Math.max(1, Number(resolveParam(cellP, playhead))),
+            lattice,
+            Number(read(layer.params.maxElements, playhead, 150000)),
+          );
+          if (cell > 0) {
+            cols = Math.round(scene.width / cell);
+            rows = Math.round(scene.height / (cell * ROW_PITCH[lattice]));
+          }
+        }
+      }
+      // Past a few hundred divisions the guide is a solid wash, not a guide.
+      if (cols > 400 || rows > 300) {
+        cols = 0;
+        rows = 0;
+      }
       if (cols > 0 && rows > 0) {
         ctx.save();
         ctx.strokeStyle = 'rgba(120,120,120,.28)';
@@ -61,7 +104,7 @@ export function Stage() {
         ctx.restore();
       }
     }
-  }, [scene, playhead, imageVersion, showGrid, layer]);
+  }, [scene, playhead, imageVersion, showGrid, layer, setElementCount]);
 
   // keep the mask canvas backing sized to the scene
   useEffect(() => {

@@ -65,17 +65,66 @@ export function morphProgress(m: LayerMorph, t: number): number {
 }
 
 /**
- * A fully-resolved element ready to draw or serialize. Carries everything a
- * painter or exporter needs, so both consume the exact same list (§6).
+ * Common to every placed element.
+ *
+ * `(x, y)` is ALWAYS the element's CENTRE, whatever it draws as. Glyphs are drawn
+ * with textAlign/textBaseline centred, shapes are drawn centred on the origin after
+ * `translate(x, y)`, SVG rotates about that point, and `applySpawn()`
+ * (engine/placements.ts) tests it against the spawn mask. A mode that thinks in
+ * top-left boxes (the dither pixel runs) converts before pushing, so all three of
+ * those agree without special cases.
  */
-export interface Placement {
+interface PlacementBase {
   x: number;
   y: number;
-  size: number;
-  glyph: string;
   color: string;
   rotation: number; // radians
   alpha: number; // 0..1, per-element
+}
+
+/** A text mark. `shape` is optional so the glyph modes' literals stay unchanged. */
+export interface GlyphPlacement extends PlacementBase {
+  shape?: 'glyph';
+  size: number; // font size in px
+  glyph: string;
   weight: string;
   font: string; // resolved font stack
+}
+
+/**
+ * What a non-text placement draws as. The geometry for each lives in
+ * `engine/shapes.ts` — one module read by both the canvas painter and the SVG
+ * exporter, so the two cannot disagree (§6).
+ */
+export type ShapeKind =
+  | 'dot' // circle (ellipse when w !== h) — the halftone dot
+  | 'square' // axis-aligned filled box
+  | 'diamond' // quad inscribed in the w×h box
+  | 'line' // filled bar: w = length, h = thickness
+  | 'cross' // two crossed bars: w×h and h×w
+  | 'ring' // stroked circle: w = outer diameter, h = ring thickness
+  | 'pixel'; // a run of dither cells — a box, but exported with crispEdges
+
+/** A geometric mark: `w`×`h` in local space, centred on (x, y), then rotated. */
+export interface ShapePlacement extends PlacementBase {
+  shape: ShapeKind;
+  w: number;
+  h: number;
+}
+
+/**
+ * A fully-resolved element ready to draw or serialize. Carries everything a painter
+ * or exporter needs, so both consume the exact same list (§6).
+ *
+ * This is a union on purpose: it makes "the painter and the exporters must agree"
+ * a compile error rather than a comment. Add a ShapeKind and every renderer that
+ * forgot it fails to build. It also keeps a halftone dot down to seven fields
+ * instead of carrying meaningless glyph/weight/font — which matters when a frame
+ * holds a hundred thousand of them.
+ */
+export type Placement = GlyphPlacement | ShapePlacement;
+
+/** Narrow to the text case. Both `undefined` and `'glyph'` mean text. */
+export function isGlyph(p: Placement): p is GlyphPlacement {
+  return p.shape === undefined || p.shape === 'glyph';
 }

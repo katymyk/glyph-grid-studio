@@ -3,6 +3,7 @@ import type { Placement } from '../../domain/scene';
 import { buildCells } from '../cells';
 import { fontStack } from '../fonts';
 import { getSample } from '../imageSample';
+import { inkFromLum } from '../tone';
 import type { ModeContext, RenderMode } from './types';
 
 export interface AsciiParams {
@@ -41,14 +42,10 @@ function asciiDefaults(): AsciiParams {
   };
 }
 
-function clamp01(v: number): number {
-  return v < 0 ? 0 : v > 1 ? 1 : v;
-}
-
-/** Luminance → ramp glyph, with contrast/brightness/invert applied at draw time. */
+/** Luminance → ramp glyph. Tone lives in engine/tone.ts, shared with halftone mode,
+    so the same picture reads the same in both (and in a morph between them). */
 function rampChar(b: number, ramp: string, invert: boolean, contrast: number, brightness: number): string {
-  const v = clamp01((b - 0.5) * (contrast / 100) + 0.5 + brightness / 100);
-  const t = invert ? v : 1 - v;
+  const t = inkFromLum(b, { contrast, brightness, invert });
   let ri = Math.round(t * (ramp.length - 1));
   ri = ri < 0 ? 0 : ri > ramp.length - 1 ? ramp.length - 1 : ri;
   return ramp[ri];

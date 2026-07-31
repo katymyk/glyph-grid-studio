@@ -271,3 +271,123 @@ Each phase leaves something that runs.
 - Rows are derived, not stored: any param whose `kind === 'keys'` becomes a row
   (`rowsForLayer`). Labels come from `panels/schema.ts` via `paramLabels.ts`, so the
   timeline and the sidebar can't drift apart.
+
+## 13. Halftone mode, and why `Placement` grew shapes
+
+Halftone is the fourth mode. It screens an uploaded image into marks: `algo` selects
+either the rotatable **dot screen** or one of five **threshold** methods
+(Floyd–Steinberg, Atkinson, ordered 4×4 / 8×8, random noise).
+
+### 13a. `Placement` is a union now
+
+Every earlier mode drew text, so `Placement` was glyph-only and the painter was one
+`fillText`. Halftone draws circles, and the dither algorithms draw boxes. `Placement`
+became a two-member union — `GlyphPlacement | ShapePlacement` — for three reasons:
+
+- **Export fidelity.** A dot exported as a `<text>` glyph is a font-dependent
+  approximation of a circle. `svg.ts` now emits real `<circle>` / `<rect>` /
+  `<polygon>`, which is what makes the Figma hand-off meaningful.
+- **Drift becomes a compile error.** Adding a `ShapeKind` that `paint.ts`, `svg.ts` or
+  `json.ts` forgot fails to build (`assertNeverShape`). §6 was previously enforced by
+  a comment; now the type system holds it.
+- **Cost.** A frame can hold >100k dots. A shape placement carries seven fields, not
+  twelve plus a meaningless font stack.
+
+Invariants that fell out and must hold: **`(x, y)` is the element's centre for every
+shape** (the spawn-zone test, the canvas rotation and the SVG `rotate()` pivot all
+assume it), and geometry lives only in `engine/shapes.ts` so painter and exporter
+cannot disagree. `paint.ts` batches consecutive same-colour dots into one path, which
+collapses a monochrome screen to a single fill.
+
+### 13b. Where the halftone logic lives
+
+```
+engine/halftone/
+  screen.ts   lattice + site enumeration (tight per-axis bounds), the element cap
+  sizeMap.ts  darkness -> dot radius: 'area' | 'coverage' | 'linear'
+  dots.ts     the assembled dot screen: sites -> placements
+  bayer.ts    generated ordered-dither matrices
+  dither.ts   floyd / atkinson / bayer / noise -> a 1-bit grid
+  runs.ts     1-bit grid -> run-merged 'pixel' placements
+  field.ts    working resolution + alpha-weighted bilinear / colour lookups
+engine/tone.ts  brightness / contrast / gamma / threshold / invert (shared with ASCII)
+engine/modes/halftone.ts  params, sampling, dispatch — the only browser-side part
+```
+
+Verified by `cd app && npm run check` (typecheck + ~150 node assertions on the
+DOM-free math + ~85 SSR assertions on the React tree, store, painter and exporters).
+See the Testing section of CLAUDE.md.
+
+**Everything under `halftone/` plus `tone.ts` and `rng.ts` is DOM-free and takes plain
+typed arrays.** That is a constraint, not a coincidence: it is what lets
+`npm run check:math` compile them with `tsc` and exercise them under node. Keep it.
+
+Details that are easy to get wrong and are now locked by assertions:
+
+- **Tone is applied once.** For the dot screen, `threshold` is a smooth offset and
+  `invert` flips the luminance mapping. For the threshold algorithms, `threshold` is
+  the binary cut and `invert` is a polarity flip on the finished bitmap — so those two
+  must be kept *out* of the shaping stage there, or each is applied twice (doubled
+  under error diffusion, silently cancelled under an ordered matrix).
+- **Per-site randomness is position-keyed** (`hash2D(x, y, seed, stream)`), never drawn
+  from `makeRNG`'s stream. The site bounds move with `angle`/`cell` and sites get
+  culled, so a stream would reshuffle the whole jitter/grain field as a slider moves.
+  Argument order matters: `stream` folds into the seed, so transposing the first three
+  makes the y-jitter field the x-jitter field shifted by one row.
+- **Transparency is gated at three points**, because it is the case the mode exists to
+  handle well and it fails in a different way at each. `Sample.lum` ignores alpha
+  (canvas pixel data is un-premultiplied, so a transparent pixel reads as pure black),
+  so: the dot builder skips sites whose source alpha is ~0; `lumAt` is **alpha-weighted**
+  bilinear, or transparent black bleeds across every cut-out edge and rings it with
+  oversized dots; and the dither gate parks transparent cells in a **third bin state**,
+  since parking them in "light" turns them into ink the moment `invert` is on.
+- **Shapes with a thickness get one.** A ring's `h` is its stroke width, a cross's its
+  arm width, a bar's its depth — handing all three `w === h` collapses them into a disc
+  and two squares, so `boxFor` applies the `thickness` param rather than letting them
+  degenerate.
+- **Wide pixel runs are clipped, not point-tested,** against the spawn zone. A merged
+  run can span the canvas, so `applySpawn` splits it along mask cells; the walk iterates
+  cell *indices*, because deriving the next boundary from the current x does not always
+  advance in floating point.
+- **Canvas and SVG must composite identically.** The painter batches consecutive
+  same-coloured dots into one path, so overlapping dots composite once; the exporter
+  therefore hoists a uniform alpha onto the `<g>` instead of putting it on each circle.
+  `cross` is one path for the same reason. Neither matters at alpha 1 — both bite the
+  moment a layer fades or morphs.
+
+### 13c. Background stays a Scene concern
+
+The mode never paints a background and only ever emits ink. `scene.background === null`
+means transparent, and that now works end-to-end for canvas, PNG, SVG and JSON. GIF is
+the exception: the format carries no alpha here, so `gif.ts` composites over white and
+the button says so.
+
+### 13d. The element cap
+
+Cell size is a free slider and the canvas can be 8000px, so "cell 3 on a 4K canvas"
+asks for ~900k dots per repaint — and the Stage repaints synchronously on every slider
+tick. `effectiveCell` / `effectivePixelSize` raise the pitch to hold `maxElements`.
+Three properties make it a design rather than a patch: it is **disclosed** (the same
+pure function feeds a `readout` control showing the effective pitch and real count),
+it is **one cap for preview and export** (a looser export cap would be exactly the
+drift §6 exists to prevent), and it is **continuous**, so animating `cell` through the
+boundary doesn't snap.
+
+### 13e. Designed for video, not yet implemented
+
+The next iteration turns a loaded video into halftone frame by frame. The seam is in
+place so the mode needs no changes:
+
+- `ModeContext` carries `fps`, and modes ask for a **frame index**
+  (`round((time + srcTime) * fps)`), not seconds — so preview and every exported frame
+  request byte-identical source data.
+- All sampling goes through `sampleSource(image, cols, rows, frame)` in
+  `imageSample.ts`. Images ignore `frame`; that function is the only place a video
+  branch is added. Its "return null while not ready, notify on ready" contract already
+  covers async seeking, and the mode already returns `[]` on null.
+- `srcTime` is an animatable param with no sidebar control, so retiming a clip on the
+  timeline needs no timeline code — `rowsForLayer` picks up any keyframed param.
+- Two things the video work *will* have to touch, both flagged in-code: the frame
+  cache needs eviction (a ring buffer around the playhead, not the unbounded `Map`),
+  and `export/sequence.ts` + `export/gif.ts` paint frames in a tight synchronous loop,
+  so they need a per-frame readiness await.

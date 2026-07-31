@@ -80,6 +80,25 @@ the preview updates, then test each export button. The core math (RNG determinis
 ASCII brightness mapping, grid-lock sizing) is pure and can be checked by copying those
 functions into a Node script if needed.
 
+### The v2 app (`app/`)
+
+`app/` has three headless checks — run all of them with `cd app && npm run check`:
+
+- `npm run typecheck` — `tsc -b`. Clean on a good tree, so any error is yours.
+- `npm run check:math` — compiles the **DOM-free** engine modules (`engine/halftone/*`,
+  `engine/tone.ts`, `engine/rng.ts`, `domain/params.ts`) with `tsc` and runs
+  `scripts/check-halftone.cjs` under node: screen geometry, tone mapping, dot-size
+  response, the dither algorithms, the run merge, determinism. **Those files must stay
+  DOM-free** or this stops working.
+- `npm run check:smoke` — a Vite SSR build of `src/__smoke.tsx`, then `node`. This is
+  the only headless way to catch runtime faults `tsc` cannot see: a panel dereferencing
+  a param a mode doesn't declare, a mode-registry import cycle, conditional-control
+  visibility, and the painter/exporter behaviour for every placement shape.
+
+Still browser-only, and worth doing by hand after engine changes: interactive latency
+while dragging sliders, and the five export buttons (especially transparent-background
+PNG/SVG and the GIF-on-white path).
+
 ## Deployment
 
 Push to `main` → the GitHub Actions workflow publishes to GitHub Pages automatically.

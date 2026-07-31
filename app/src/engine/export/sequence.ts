@@ -13,6 +13,9 @@ export async function sceneToSequence(scene: Scene, onProgress?: (p: number) => 
   const ctx = off.getContext('2d');
   if (!ctx) throw new Error('no 2d context');
 
+  // FUTURE (video source): frames are painted synchronously, so a source still
+  // decoding would silently emit blank frames. A video source needs a per-frame
+  // readiness await here (see engine/imageSample.ts sampleSource).
   for (let f = 0; f < total; f++) {
     paintScene(ctx, scene, f / fps);
     const blob = await new Promise<Blob>((resolve, reject) =>

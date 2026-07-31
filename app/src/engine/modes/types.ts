@@ -5,6 +5,11 @@ export interface ModeContext {
   width: number;
   height: number;
   time: number; // seconds; used by time-based modes (particles). Others may ignore it.
+  /** Scene frame rate. Lets a mode derive a stable frame index — round(time * fps) —
+      which is what per-frame determinism needs: quantising to frames means the
+      preview and every exported frame ask for byte-identical source data, and an
+      animated grain lands on the same value whether you scrub back or play forward. */
+  fps: number;
 }
 
 /**

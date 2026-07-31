@@ -4,7 +4,7 @@ import { Timeline } from './panels/Timeline';
 import { panelsForMode } from './panels/schema';
 import { ActionsBar } from './panels/ActionsBar';
 import { ModePanel } from './panels/ModePanel';
-import { AsciiImagePanel } from './panels/AsciiImagePanel';
+import { SourcePanel } from './panels/SourcePanel';
 import { SpawnPanel } from './panels/SpawnPanel';
 import { ViewPanel } from './panels/ViewPanel';
 import { ColorsPanel } from './panels/ColorsPanel';
@@ -21,6 +21,10 @@ export function App() {
   const panels = panelsForMode(layer.mode);
   const morph = layer.morph;
   const morphPanels = morph ? panelsForMode(morph.mode) : [];
+  // Derived, not a list of mode names: any mode that declares an `image` param gets
+  // the upload panel, so the next image-consuming mode needs no change here.
+  const hasSource = 'image' in layer.params;
+  const morphHasSource = !!morph && 'image' in morph.params;
 
   // Undo/redo + transport keys (ignored while typing in a field)
   useEffect(() => {
@@ -81,7 +85,7 @@ export function App() {
           <ActionsBar />
           <LayersPanel />
           <ModePanel />
-          {layer.mode === 'ascii' && <AsciiImagePanel />}
+          {hasSource && <SourcePanel />}
           {panels.map((def) => (
             <SchemaPanel key={def.id} layerId={layer.id} def={def} />
           ))}
@@ -102,7 +106,7 @@ export function App() {
               >
                 morph target · {getMode(morph.mode).label}
               </div>
-              {morph.mode === 'ascii' && <AsciiImagePanel slot="morph" />}
+              {morphHasSource && <SourcePanel slot="morph" />}
               {morphPanels.map((def) => (
                 <SchemaPanel
                   key={`morph-${def.id}`}

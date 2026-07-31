@@ -155,6 +155,10 @@ export function resolveParam<T>(p: Param<T>, t: number): T {
   if (typeof a.value === 'number' && typeof b.value === 'number') {
     return ((a.value as number) + ((b.value as number) - (a.value as number)) * k) as T;
   }
-  // Non-numeric values step at the incoming keyframe.
-  return k < 1 ? a.value : b.value;
+  // Non-numeric values step at the incoming keyframe — on RAW segment time, not on
+  // the eased k. The overshoot curves (back, elastic) exceed 1 partway through a
+  // segment, so stepping on k fires the switch early and, for elastic, flips back
+  // and forth several times. For every non-overshoot curve k < 1 ⟺ local < 1, so
+  // this only changes behaviour where it was wrong.
+  return local < 1 ? a.value : b.value;
 }

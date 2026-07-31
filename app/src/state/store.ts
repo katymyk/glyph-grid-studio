@@ -57,6 +57,11 @@ interface StudioState {
   brushErase: boolean;
   maskVisible: boolean;
   timelineHeight: number;
+  /** Elements the last paint actually drew. Reported by the Stage rather than
+      recomputed, so showing it costs nothing — a second resolveScene would double
+      the cost of every interaction, and a halftone screen is not cheap to resolve. */
+  elementCount: number;
+  setElementCount: (n: number) => void;
   toggleGrid: () => void;
   setBrushSize: (v: number) => void;
   setBrushErase: (v: boolean) => void;
@@ -114,6 +119,21 @@ export function readParam(layer: Layer, slot: Slot, key: string): Param<unknown>
   return layer.params[key];
 }
 
+/**
+ * Every param of one slot, resolved at time t.
+ *
+ * Used by controls that depend on their SIBLINGS rather than on their own value —
+ * conditional visibility (`when`) and derived readouts. Building the whole set at
+ * once means one subscription instead of one per cross-reference.
+ */
+export function resolveSlotParams(layer: Layer, slot: Slot, t: number): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const src = slot === 'morph' ? layer.morph?.params : layer.params;
+  if (src) for (const [k, p] of Object.entries(src)) out[k] = resolveParam(p, t);
+  if (slot === 'layer') out.opacity = resolveParam(layer.opacity, t);
+  return out;
+}
+
 /** Put a param back into the slot it lives in. */
 function writeParam(layer: Layer, slot: Slot, key: string, p: Param<unknown>): Layer {
   if (slot === 'layer') {
@@ -157,13 +177,28 @@ function withMorph(scene: Scene, id: string, fn: (m: LayerMorph) => LayerMorph):
   return withLayer(scene, id, (l) => (l.morph ? { ...l, morph: fn(l.morph) } : l));
 }
 
-/** Params for a fresh morph target: keep the look-sharing bits from the base mode so
-    the handover reads as the *same* artwork changing form, not two unrelated ones. */
-const SHARED_KEYS = ['palette', 'fontKey', 'weight', 'glyphs', 'seed'];
-function seedMorphParams(base: Record<string, Param<unknown>>, targetMode: string) {
-  const params = getMode(targetMode).defaultParams();
-  for (const k of SHARED_KEYS) if (base[k] && params[k]) params[k] = base[k];
-  return params;
+/**
+ * Params a new set inherits from the one it replaces, so switching or morphing a
+ * layer's mode reads as the SAME artwork changing form rather than two unrelated
+ * ones. `image` is included because otherwise flipping a layer from ASCII to
+ * Halftone silently blanks the canvas and asks for the picture to be uploaded again.
+ */
+const INHERITED_KEYS = ['palette', 'fontKey', 'weight', 'glyphs', 'seed', 'image'];
+
+/** Copy the inherited params from `base` onto `params`. Keys the target set doesn't
+    declare are skipped, so a mode never gains a param it doesn't understand. */
+function carryInherited(
+  params: Record<string, Param<unknown>>,
+  base: Record<string, Param<unknown>>,
+) {
+  const out = { ...params };
+  for (const k of INHERITED_KEYS) if (base[k] && out[k]) out[k] = base[k];
+  return out;
+}
+
+/** Carry the inherited params from `base` onto a fresh param set for `targetMode`. */
+function inheritParams(base: Record<string, Param<unknown>>, targetMode: string) {
+  return carryInherited(getMode(targetMode).defaultParams(), base);
 }
 
 // ----- history: capture the PRE-change scene, debounced so a slider drag is one step -----
@@ -188,10 +223,14 @@ function recordNow(prev: Scene): void {
   useStudio.setState((s) => ({ past: [...s.past, prev].slice(-HISTORY_MAX), future: [] }));
 }
 
-function surpriseScene(scene: Scene): Scene {
+/** Randomize the ACTIVE layer's look. Uses Math.random deliberately: these become
+    `konst` param values in the document, they are not part of the render path (which
+    stays seeded and deterministic). Never touches `image` — losing the user's
+    picture is not a surprise anyone wants. */
+function surpriseScene(scene: Scene, activeLayerId: string): Scene {
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
   const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-  const layer = scene.layers[0];
+  const layer = scene.layers.find((l) => l.id === activeLayerId) ?? scene.layers[0];
   const params = { ...layer.params };
   if (layer.mode === 'generative') {
     const sets = ['/ \\ < > -', '• ◦ ● ○', '0 1', 'A B C D E F', '↑ ↗ → ↘ ↓ ↙ ← ↖', '+ × ÷ = ≈ ∞'];
@@ -211,6 +250,22 @@ function surpriseScene(scene: Scene): Scene {
     params.invert = konst(Math.random() < 0.5);
     params.contrast = konst(Math.round(rnd(70, 180)));
     params.brightness = konst(Math.round(rnd(-30, 30)));
+    params.seed = konst(Math.floor(Math.random() * 9999) + 1);
+  } else if (layer.mode === 'halftone') {
+    params.algo = konst(pick(['halftone', 'halftone', 'halftone', 'floyd', 'atkinson', 'bayer8']));
+    params.cell = konst(Math.round(rnd(6, 26)));
+    params.angle = konst(pick([0, 15, 30, 45, 45, 60, 75]));
+    params.lattice = konst(pick(['square', 'square', 'hex']));
+    params.dotShape = konst(pick(['dot', 'dot', 'dot', 'square', 'diamond', 'ring', 'cross']));
+    params.dotScale = konst(Math.round(rnd(70, 140)));
+    params.sizeMap = konst(pick(['area', 'coverage', 'linear']));
+    params.fill = konst(Math.round(rnd(80, 130)));
+    params.jitter = konst(pick([0, 0, 0, Math.round(rnd(10, 45))]));
+    params.pixel = konst(Math.round(rnd(3, 10)));
+    params.contrast = konst(Math.round(rnd(80, 190)));
+    params.brightness = konst(Math.round(rnd(-25, 25)));
+    params.threshold = konst(Math.round(rnd(-25, 25)));
+    params.invert = konst(Math.random() < 0.25);
     params.seed = konst(Math.floor(Math.random() * 9999) + 1);
   }
   return { ...scene, layers: scene.layers.map((l) => (l.id === layer.id ? { ...l, params } : l)) };
@@ -257,6 +312,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   removeLayer: (id) => {
     if (get().scene.layers.length <= 1) return;
     recordNow(get().scene);
+    delete modeParamsCache[id]; // its remembered params can hold a whole image
     set((s) => {
       const layers = s.scene.layers.filter((l) => l.id !== id);
       const activeLayerId = s.activeLayerId === id ? layers[layers.length - 1].id : s.activeLayerId;
@@ -291,6 +347,8 @@ export const useStudio = create<StudioState>((set, get) => ({
   brushErase: false,
   maskVisible: true,
   timelineHeight: 268,
+  elementCount: 0,
+  setElementCount: (n) => set((s) => (s.elementCount === n ? {} : { elementCount: n })),
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
   setBrushSize: (v) => set({ brushSize: v }),
   setBrushErase: (v) => set({ brushErase: v }),
@@ -416,7 +474,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       scene: withLayer(s.scene, layerId, (l) => {
         if (!mode) return { ...l, morph: null };
         // Reuse the existing target params when only re-picking the same mode.
-        const params = l.morph?.mode === mode ? l.morph.params : seedMorphParams(l.params, mode);
+        const params = l.morph?.mode === mode ? l.morph.params : inheritParams(l.params, mode);
         const d = s.scene.duration;
         return {
           ...l,
@@ -468,7 +526,15 @@ export const useStudio = create<StudioState>((set, get) => ({
     if (!layer || layer.mode === mode) return;
     recordNow(cur);
     (modeParamsCache[layerId] ??= {})[layer.mode] = layer.params;
-    const nextParams = modeParamsCache[layerId][mode] ?? getMode(mode).defaultParams();
+    // Returning to a mode restores the dial settings you left it with; a mode you
+    // haven't used yet starts from its defaults. Either way the shared keys are taken
+    // from the mode you're LEAVING, not from the remembered set — the picture and the
+    // palette belong to the layer, so switching back must not resurrect the image that
+    // mode happened to hold three switches ago.
+    const remembered = modeParamsCache[layerId][mode];
+    const nextParams = remembered
+      ? carryInherited(remembered, layer.params)
+      : inheritParams(layer.params, mode);
     set((s) => ({
       future: [],
       selection: null,
@@ -545,12 +611,15 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   reset: () => {
     recordNow(get().scene);
+    // The per-layer mode-param memory holds whole uploaded images; keeping it across
+    // a reset would both resurrect old params and pin that memory for the tab's life.
+    for (const k of Object.keys(modeParamsCache)) delete modeParamsCache[k];
     set({ future: [], scene: defaultScene(), activeLayerId: 'layer-1', selection: null });
   },
 
   surprise: () => {
     recordNow(get().scene);
-    set((s) => ({ future: [], scene: surpriseScene(s.scene) }));
+    set((s) => ({ future: [], scene: surpriseScene(s.scene, s.activeLayerId) }));
   },
 }));
 

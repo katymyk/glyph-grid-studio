@@ -3,6 +3,7 @@ import { useStudio } from '../state/store';
 import { Panel } from '../ui/Panel';
 import { Field } from '../ui/Field';
 import { Button } from '../ui/Button';
+import { Readout } from '../ui/Readout';
 import { download } from '../lib/download';
 import { sceneToSVG } from '../engine/export/svg';
 import { sceneToJSON } from '../engine/export/json';
@@ -11,6 +12,10 @@ import { sceneToGIF } from '../engine/export/gif';
 import { sceneToSequence } from '../engine/export/sequence';
 import styles from '../ui/ui.module.css';
 
+/** Above roughly this many elements, a vector export is slow to write, heavy to open,
+    and hard on Figma — so it is worth confirming rather than just doing. */
+const CONFIRM_ELEMENTS = 40000;
+
 export function ExportPanel() {
   const scene = useStudio((s) => s.scene);
   const playhead = useStudio((s) => s.playhead);
@@ -18,11 +23,26 @@ export function ExportPanel() {
   const [busy, setBusy] = useState<string | null>(null);
 
   const frames = Math.max(1, Math.round(scene.fps * scene.duration));
+  // Reported by the Stage's last paint rather than recomputed here — resolving the
+  // scene a second time would double the cost of every edit. A halftone screen can
+  // reach six figures, which is what makes this worth showing before an export.
+  const elements = useStudio((s) => s.elementCount);
 
-  const exSVG = () =>
+  const heavyOk = (kind: string) =>
+    elements < CONFIRM_ELEMENTS ||
+    window.confirm(
+      `This frame has ${elements.toLocaleString('en-US')} elements. The ${kind} file will be ` +
+        `large and may be slow to open. Continue?`,
+    );
+
+  const exSVG = () => {
+    if (!heavyOk('SVG')) return;
     download(new Blob([sceneToSVG(scene, playhead)], { type: 'image/svg+xml' }), 'glyph-grid.svg');
-  const exJSON = () =>
+  };
+  const exJSON = () => {
+    if (!heavyOk('JSON')) return;
     download(new Blob([sceneToJSON(scene, playhead)], { type: 'application/json' }), 'glyph-grid.json');
+  };
   const exPNG = async () => download(await sceneToPNGBlob(scene, playhead, 2), 'glyph-grid@2x.png');
 
   const runGIF = async () => {
@@ -44,11 +64,16 @@ export function ExportPanel() {
     }
   };
 
-  const gifLabel = busy?.startsWith('gif') ? `GIF… ${busy.split(':')[1]}%` : 'GIF (animated)';
+  const gifLabel = busy?.startsWith('gif')
+    ? `GIF… ${busy.split(':')[1]}%`
+    : scene.background === null
+      ? 'GIF (animated · on white)'
+      : 'GIF (animated)';
   const seqLabel = busy?.startsWith('seq') ? `Frames… ${busy.split(':')[1]}%` : 'PNG sequence (.zip)';
 
   return (
     <Panel title="Export">
+      <Readout label="Elements in this frame" value={elements.toLocaleString('en-US')} />
       <div className={styles.btnGrid}>
         <Button onClick={exSVG}>SVG · Figma</Button>
         <Button onClick={exPNG}>PNG · 2×</Button>

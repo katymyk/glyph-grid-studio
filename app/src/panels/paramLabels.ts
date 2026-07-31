@@ -9,6 +9,9 @@ const EXTRA: Record<string, string> = {
   fontKey: 'Font',
   glyphs: 'Symbols',
   ramp: 'Character ramp',
+  // Halftone params with no control of their own (or whose control is a readout).
+  srcTime: 'Source time',
+  maxElements: 'Element cap',
 };
 
 const cache = new Map<string, Record<string, string>>();
@@ -19,6 +22,9 @@ function labelsFor(mode: string): Record<string, string> {
     m = {};
     for (const panel of panelsForMode(mode)) {
       for (const c of panel.controls) {
+        // Readouts describe a param without naming it ("Actual"), so they'd give a
+        // useless timeline label for whatever param they happen to reference.
+        if (c.kind === 'readout') continue;
         // strip parenthetical hints — the timeline gutter is narrow
         if (!m[c.param]) m[c.param] = c.label.split('(')[0].trim();
       }

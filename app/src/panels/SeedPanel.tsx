@@ -7,7 +7,9 @@ import { Button } from '../ui/Button';
 export function SeedPanel() {
   const setSharedParam = useStudio((s) => s.setSharedParam);
   const layer = useActiveLayer();
-  const seed = (resolveParam(layer.params.seed as Param<number>, 0) as number) ?? 1;
+  // Guard the read, not the result — see the note in ColorsPanel.
+  const seedParam = layer.params.seed as Param<number> | undefined;
+  const seed = seedParam ? ((resolveParam(seedParam, 0) as number) ?? 1) : 1;
 
   return (
     <Panel title="Randomness">

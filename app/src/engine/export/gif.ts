@@ -22,8 +22,21 @@ export async function sceneToGIF(scene: Scene, onProgress?: (p: number) => void)
   const ctx = off.getContext('2d');
   if (!ctx) throw new Error('no 2d context');
 
+  // FUTURE (video source): this loop paints frames synchronously, so a source that
+  // is still decoding would silently emit blank frames. A video source needs a
+  // per-frame readiness await here (see engine/imageSample.ts sampleSource).
   for (let f = 0; f < total; f++) {
     paintScene(ctx, scene, f / fps);
+    // GIF has no alpha channel here: gif.js is configured without a transparent
+    // index, so it reads raw RGBA and quantizes fully-transparent pixels (0,0,0,0)
+    // to black. Compositing the frame over white keeps a transparent-background
+    // scene looking like the preview instead of inverting it.
+    if (scene.background === null) {
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, scene.width, scene.height);
+      ctx.globalCompositeOperation = 'source-over';
+    }
     gif.addFrame(ctx, { copy: true, delay });
     onProgress?.(((f + 1) / total) * 0.5); // capture = first half of progress
     await new Promise((r) => setTimeout(r, 0));

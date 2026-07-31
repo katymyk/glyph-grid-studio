@@ -1,5 +1,5 @@
 import { resolveParam, type Param } from '../domain/params';
-import { morphProgress, type Layer, type MorphStyle, type Placement, type Scene, type SpawnZone } from '../domain/scene';
+import { isGlyph, morphProgress, type Layer, type MorphStyle, type Placement, type Scene, type SpawnZone } from '../domain/scene';
 import { getMode } from './modes';
 import { getSample } from './imageSample';
 
@@ -9,7 +9,14 @@ export interface ResolvedLayer {
   placements: Placement[];
 }
 
-/** Keep only placements allowed by the layer's spawn zone (normalized to canvas). */
+/**
+ * Keep only placements allowed by the layer's spawn zone (normalized to canvas).
+ *
+ * Point-tested at the placement's centre, which is right for a glyph or a dot. A
+ * run-merged pixel box is different: it can be as wide as the canvas, so testing its
+ * midpoint would either stamp a full-width bar across the artwork or delete one that
+ * genuinely overlaps the zone. Those get CLIPPED against the mask instead.
+ */
 function applySpawn(spawn: SpawnZone | undefined, placements: Placement[], W: number, H: number): Placement[] {
   if (!spawn || spawn.kind === 'full') return placements;
   const src = spawn.kind === 'image' ? spawn.image : spawn.mask;
@@ -18,15 +25,48 @@ function applySpawn(spawn: SpawnZone | undefined, placements: Placement[], W: nu
   const rows = Math.max(1, Math.round((200 * H) / W));
   const sample = getSample(src, cols, rows);
   if (!sample) return placements; // decoding; repaint refilters when ready
-  return placements.filter((p) => {
-    const cx = Math.min(cols - 1, Math.max(0, Math.floor((p.x / W) * cols)));
-    const cy = Math.min(rows - 1, Math.max(0, Math.floor((p.y / H) * rows)));
+
+  const inside = (x: number, y: number): boolean => {
+    const cx = Math.min(cols - 1, Math.max(0, Math.floor((x / W) * cols)));
+    const cy = Math.min(rows - 1, Math.max(0, Math.floor((y / H) * rows)));
     const idx = cy * cols + cx;
     // image masks read luminance (opaque photos); brush masks read painted alpha
-    const inside =
-      spawn.kind === 'image' ? sample.lum[idx] >= 0.5 : sample.alpha[idx] / 255 >= 0.15;
-    return spawn.invert ? !inside : inside;
-  });
+    const hit = spawn.kind === 'image' ? sample.lum[idx] >= 0.5 : sample.alpha[idx] / 255 >= 0.15;
+    return spawn.invert ? !hit : hit;
+  };
+
+  const cellW = W / cols;
+  const out: Placement[] = [];
+  for (const p of placements) {
+    // Only wide boxes need clipping; anything within one mask cell is already as
+    // precise as the mask can express, so the cheap point test is exact for it.
+    if (isGlyph(p) || p.shape !== 'pixel' || p.w <= cellW) {
+      if (inside(p.x, p.y)) out.push(p);
+      continue;
+    }
+    const left = p.x - p.w / 2;
+    const right = p.x + p.w / 2;
+    // Walk the mask cells the run spans by INDEX. Deriving the next boundary from the
+    // current x instead would not always advance: with cellW = 9.6, x = 31 * 9.6
+    // divides to 30.999999999999996, so flooring lands back on the boundary we are
+    // already standing on and the walk never terminates.
+    const firstCell = Math.floor(left / cellW);
+    const lastCell = Math.ceil(right / cellW);
+    let segStart: number | null = null;
+    for (let ci = firstCell; ci < lastCell; ci++) {
+      const cellL = Math.max(left, ci * cellW);
+      const cellR = Math.min(right, (ci + 1) * cellW);
+      if (cellR <= cellL) continue;
+      if (inside((cellL + cellR) / 2, p.y)) {
+        if (segStart === null) segStart = cellL;
+      } else if (segStart !== null) {
+        out.push({ ...p, x: (segStart + cellL) / 2, w: cellL - segStart });
+        segStart = null;
+      }
+    }
+    if (segStart !== null) out.push({ ...p, x: (segStart + right) / 2, w: right - segStart });
+  }
+  return out;
 }
 
 /** Deterministic 0..1 from an integer — gives each element a stable dissolve turn
@@ -59,7 +99,12 @@ function modePlacements(
   const mode = getMode(modeKey);
   const resolved: Record<string, unknown> = {};
   for (const [k, param] of Object.entries(params)) resolved[k] = resolveParam(param, t);
-  return mode.placements(resolved, { width: scene.width, height: scene.height, time: t });
+  return mode.placements(resolved, {
+    width: scene.width,
+    height: scene.height,
+    time: t,
+    fps: scene.fps,
+  });
 }
 
 /** Placements for one layer at time t, including a mode morph if it has one. */

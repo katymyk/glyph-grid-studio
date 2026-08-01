@@ -80,6 +80,79 @@ the preview updates, then test each export button. The core math (RNG determinis
 ASCII brightness mapping, grid-lock sizing) is pure and can be checked by copying those
 functions into a Node script if needed.
 
+### The v2 app (`app/`)
+
+`app/` has three headless checks — run all of them with `cd app && npm run check`:
+
+- `npm run typecheck` — `tsc -b`. Clean on a good tree, so any error is yours.
+- `npm run check:math` — compiles the **DOM-free** engine modules (`engine/halftone/*`,
+  `engine/tone.ts`, `engine/rng.ts`, `domain/params.ts`, `domain/project.ts`,
+  `domain/sources.ts`) with `tsc` and runs `scripts/check-halftone.cjs` under node: screen
+  geometry, tone mapping, dot-size response, the dither algorithms, the run merge,
+  determinism — plus the whole save/reopen surface (clip-reference collection including
+  keyframed values, the re-link rewrite, round-tripping, and every way a bad file is
+  refused). **Those files must stay DOM-free** or this stops working.
+- `npm run check:smoke` — a Vite SSR build of `src/__smoke.tsx`, then `node`. This is
+  the only headless way to catch runtime faults `tsc` cannot see: a panel dereferencing
+  a param a mode doesn't declare, a mode-registry import cycle, conditional-control
+  visibility, and the painter/exporter behaviour for every placement shape. Video is
+  covered here only as far as it can be without a browser: ref routing, the readiness
+  probe's pending/not-pending contract, and clip frame timing (`clipMs` is exported
+  purely because it is the one pure part). Decoding and seeking are not.
+
+Still browser-only, and worth doing by hand after engine changes: interactive latency
+while dragging sliders, and the six export buttons (especially transparent-background
+PNG/SVG and the GIF/MP4-on-white paths).
+
+### Persistence (`state/persist.ts`, `lib/idb.ts`)
+
+Work autosaves to IndexedDB (not localStorage — one uploaded photo is a multi-megabyte
+data URL and blows past the ~5MB ceiling) and is restored on the next visit. Two rules
+that are easy to break:
+
+- **`reserveVideoRefs` must run before a restored scene lands.** Clip ids come from a
+  per-session counter, so a restored scene pointing at `video:1` and the next uploaded
+  clip — also minted `video:1` — would collide and that layer would silently render the
+  wrong file. `applyProject()` reserves first, then loads; keep that order.
+- **The clip manifest is the only surviving record of a missing clip.** A browser cannot
+  keep a video file across a reload, so after a restore the file is gone and
+  `store.clips` holds the last description of it. Describe clips from live `videoInfo`
+  *falling back* to that manifest — rebuilding from live state alone renames every
+  missing clip to "Unknown clip" and destroys the one clue about which file to re-link.
+
+IndexedDB itself has no headless coverage. It is verified with playwright-core against
+real Chrome (see the browser recipe): autosave across a reload, the restore notice, the
+`.ggs` file round trip, "start fresh" keeping the previous project in Recent, and the
+missing-clip alert naming the file. Re-run that after touching this layer.
+
+For a **video source** specifically, the things that only a browser can tell you — and the
+checks that matter, because each one has a plausible silent failure:
+
+1. Load a clip in Halftone. Step the playhead and confirm the art changes; step back and
+   confirm the earlier frame returns exactly. (A seek that never lands looks like a still.)
+2. Export a PNG sequence and confirm the frames differ from each other. This is the
+   decisive one: a broken `paintSettled` gives a zip with the right frame *count* and the
+   same picture in every file.
+3. Export MP4 and check the frame count is `fps × duration` and that it opens in a player.
+   In Safari specifically — that path has no automated coverage at all (see below).
+4. Scrub fast, then let go — the canvas should lag and catch up, never blank or flicker.
+5. **Press play, then pause.** The frame must become *exact* on pause with no further
+   interaction: step away and back and compare. During playback the canvas shows the
+   presented video frame, which is close but not the frame that was asked for, and nothing
+   in the scene changes when you pause — so if the repaint on leaving the live regime is
+   ever lost, the artwork you stopped on is not the artwork you export.
+6. Play at 6 / 12 / 25 fps and confirm the picture visibly *steps* at that rate and the frame
+   readout increments by exactly one. Change fps mid-playback: the playhead must continue from
+   the same second, not jump.
+7. Two layers on one clip at different `srcTime` — expect a console warning and a fall back
+   to seeking (slow but stable), not a stall.
+8. Firefox, which has no `requestVideoFrameCallback` — playback must still advance via the
+   clip-clock fallback.
+
+Neither Safari nor Firefox can be automated here, so both MP4 negotiation and the rVFC
+fallback are written to be correct by construction and to log why they degraded. If a video
+or MP4 report comes in, ask for the console output first — it names the reason.
+
 ## Deployment
 
 Push to `main` → the GitHub Actions workflow publishes to GitHub Pages automatically.

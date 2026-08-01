@@ -475,7 +475,7 @@ function SegmentCurve({ a, b }: { a: Keyframe<unknown>; b: Keyframe<unknown> }) 
     .join(' ');
   return (
     <svg className={styles.segSvg} viewBox="0 0 100 100" preserveAspectRatio="none">
-      <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+      <polyline points={pts} fill="none" stroke="var(--accent-fg)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }

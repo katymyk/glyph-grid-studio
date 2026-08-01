@@ -107,7 +107,7 @@ export function App() {
                   fontSize: 10.5,
                   letterSpacing: '0.06em',
                   textTransform: 'uppercase',
-                  color: 'var(--accent)',
+                  color: 'var(--accent-fg)',
                 }}
               >
                 morph target · {getMode(morph.mode).label}

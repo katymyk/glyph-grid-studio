@@ -1,19 +1,55 @@
-/* Design tokens — ported from v1 :root. The single place to re-theme the app.
-   Values here map cleanly to Figma/paper-derived design tokens later. */
+/* Design tokens — the single place to re-theme the app.
+   Values map cleanly to Figma/paper-derived design tokens.
+
+   Direction: **blueprint / drafting table** (drafted in Paper, "Lucky nebula").
+   A cool graphite chrome; the white artboard floats on a darker stage; the brand
+   cobalt carries the ONLY accent. */
 :root {
-  --bg: #14140f;
-  --panel: #1d1d17;
-  --panel-2: #26261e;
-  --line: #34342a;
-  --text: #e9e6dc;
-  --muted: #9a9789;
-  --accent: #e8562e;
+  --bg: #10131a; /* stage — the surface the artboard floats on */
+  --panel: #171b24; /* sidebar */
+  --panel-2: #222835; /* raised control */
+  --line: #2b323f; /* hairline */
+  --text: #eceef2;
+  --muted: #868e9e;
+  --accent: #2f43fa; /* brand cobalt */
+
+  /* ---- derived states ----------------------------------------------------
+     These exist as tokens because they used to be hardcoded hex in two
+     stylesheets, which is what made the last re-theme a hunt rather than an
+     edit. Nothing below should be spelled out again anywhere else. */
+
+  --line-hover: #3b4557; /* hairline, hovered — also the major ruler tick */
+  --panel-3: #2b3345; /* raised control, hovered */
+  --line-faint: rgba(43, 50, 63, 0.45); /* the between-rows divider */
+
+  /* Foreground cobalt. The brand blue is DARK — as a fill with white on top it
+     is fine, but as text or a 1.5px curve on graphite it disappears (about 2:1).
+     Anything drawn *in* the accent rather than *filled* with it uses this. */
+  --accent-fg: #7c8bff;
+  --on-accent: #ffffff; /* text sitting on an accent fill */
+
+  /* Accent tints, lightest to strongest: selected row, hover, selection,
+     the morph bar's far end. */
+  --accent-wash-1: rgba(47, 67, 250, 0.13);
+  --accent-wash-2: rgba(47, 67, 250, 0.18);
+  --accent-wash-3: rgba(47, 67, 250, 0.26);
+  --accent-wash-4: rgba(47, 67, 250, 0.6);
+  --accent-edge: rgba(47, 67, 250, 0.5);
+  --accent-ring: rgba(47, 67, 250, 0.4); /* focus/selected halo on a keyframe */
+
+  /* The stage's checkerboard, so a transparent background reads as transparent
+     rather than as black. */
+  --check-a: #1b202a;
+  --check-b: #161a22;
+
   --radius: 8px;
 
   --diatype: "ABC Diatype", "Helvetica Neue", -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, Arial, sans-serif;
-  --diamono: "ABC Diatype Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas,
-    monospace;
+  /* JetBrains Mono leads: ABC Diatype Mono is a separate licence and is not
+     installed, so listing it first would silently fall through to SF Mono. */
+  --diamono: "JetBrains Mono", "ABC Diatype Mono", "SFMono-Regular", ui-monospace,
+    Menlo, Consolas, monospace;
 
   --space-1: 6px;
   --space-2: 10px;

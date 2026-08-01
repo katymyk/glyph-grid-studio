@@ -312,7 +312,7 @@ function SegmentEditor({
     <div className={styles.block}>
       <p className={styles.blockTitle}>
         <span>{title}</span>
-        {held && <span style={{ color: 'var(--accent)' }}>held</span>}
+        {held && <span style={{ color: 'var(--accent-fg)' }}>held</span>}
       </p>
       <div className={styles.curveWrap}>
         <div className={styles.curveBox}>

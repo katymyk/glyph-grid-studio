@@ -27,7 +27,7 @@ export function EaseCurve({
   const span = 1 + pad * 2;
   const toY = (v: number) => ((1 + pad - v) / span) * height;
   const d = pts.map((p, i) => `${i ? 'L' : 'M'}${(p.x * width).toFixed(2)} ${toY(p.y).toFixed(2)}`).join(' ');
-  const stroke = faint ? 'var(--muted)' : 'var(--accent)';
+  const stroke = faint ? 'var(--muted)' : 'var(--accent-fg)';
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block', overflow: 'visible' }}>

@@ -141,7 +141,7 @@ export function SourcePanel({ slot = 'base' }: { slot?: Slot }) {
       />
 
       {error && (
-        <p style={{ fontSize: 10.5, color: 'var(--accent)', lineHeight: 1.5, marginTop: 8 }}>{error}</p>
+        <p style={{ fontSize: 10.5, color: 'var(--accent-fg)', lineHeight: 1.5, marginTop: 8 }}>{error}</p>
       )}
 
       <p style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 8 }}>

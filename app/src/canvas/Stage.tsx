@@ -4,6 +4,26 @@ import { resolveParam, type Param } from '../domain/params';
 import { ROW_PITCH, effectiveCell, type Lattice } from '../engine/halftone/screen';
 import { useStudio, useActiveLayer } from '../state/store';
 
+/**
+ * The brush-mask colour, read from the theme once.
+ *
+ * The mask is a UI overlay rather than part of the artwork, so it should follow
+ * `tokens.css` like everything else — but a canvas fillStyle cannot take `var()`. The
+ * fallback covers SSR (the smoke build has no document) and keeps the brush usable if
+ * the variable is ever renamed.
+ */
+let brushFill: string | null = null;
+function brushColor(): string {
+  if (brushFill === null) {
+    const v =
+      typeof document === 'undefined'
+        ? ''
+        : getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    brushFill = v || '#2f43fa';
+  }
+  return brushFill;
+}
+
 /** Resolve an optional param at time t, falling back when the mode doesn't declare it. */
 function read<T>(p: Param<unknown> | undefined, t: number, fallback: T): T {
   return p ? (resolveParam(p, t) as T) : fallback;
@@ -165,7 +185,9 @@ export function Stage() {
     const ctx = m.getContext('2d');
     if (!ctx) return;
     ctx.globalCompositeOperation = brushErase ? 'destination-out' : 'source-over';
-    ctx.fillStyle = 'rgba(232,86,46,.95)';
+    // The mask overlay is chrome, not artwork, so its colour follows the theme. Canvas 2D
+    // can't take a `var()`, hence the read — cached, because this runs per pointer move.
+    ctx.fillStyle = brushColor();
     ctx.beginPath();
     ctx.arc(x, y, brushSize, 0, Math.PI * 2);
     ctx.fill();
@@ -188,7 +210,8 @@ export function Stage() {
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'hidden',
-        background: 'repeating-conic-gradient(#191914 0% 25%, #14140f 0% 50%) 50% / 22px 22px',
+        background:
+          'repeating-conic-gradient(var(--check-a) 0% 25%, var(--check-b) 0% 50%) 50% / 22px 22px',
       }}
     >
       <div ref={boxRef} style={{ position: 'relative', boxShadow: '0 8px 40px rgba(0,0,0,.5)' }}>

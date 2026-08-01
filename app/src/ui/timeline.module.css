@@ -74,12 +74,12 @@
   font-family: var(--diamono);
 }
 .tBtn:hover {
-  border-color: #4c4c3e;
+  border-color: var(--line-hover);
 }
 .tBtnOn {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .readout {
   font-family: var(--diamono);
@@ -144,7 +144,7 @@
 }
 .tickMajor {
   height: 10px;
-  background: #4c4c3e;
+  background: var(--line-hover);
 }
 .tickLabel {
   position: absolute;
@@ -228,10 +228,10 @@
   grid-template-columns: var(--gutter) 1fr;
   height: 27px;
   align-items: center;
-  border-bottom: 1px solid rgba(52, 52, 42, 0.45);
+  border-bottom: 1px solid var(--line-faint);
 }
 .rowSel {
-  background: rgba(232, 86, 46, 0.07);
+  background: var(--accent-wash-1);
 }
 .rowGutter {
   display: flex;
@@ -271,7 +271,7 @@
   background: var(--panel-2);
 }
 .iconBtnOn {
-  color: var(--accent);
+  color: var(--accent-fg);
 }
 
 .track {
@@ -290,10 +290,10 @@
   border-radius: 2px;
 }
 .seg:hover {
-  background: rgba(232, 86, 46, 0.1);
+  background: var(--accent-wash-2);
 }
 .segSel {
-  background: rgba(232, 86, 46, 0.14);
+  background: var(--accent-wash-3);
 }
 .segSvg {
   display: block;
@@ -320,7 +320,7 @@
 }
 .keyOn {
   background: var(--accent);
-  box-shadow: 0 0 0 2px rgba(232, 86, 46, 0.25);
+  box-shadow: 0 0 0 2px var(--accent-ring);
 }
 .keyHold {
   border-radius: 0;
@@ -336,7 +336,7 @@
   bottom: 5px;
   border: 1px solid var(--accent);
   border-radius: 3px;
-  background: linear-gradient(90deg, rgba(232, 86, 46, 0.1), rgba(232, 86, 46, 0.45));
+  background: linear-gradient(90deg, var(--accent-wash-2), var(--accent-wash-4));
   cursor: grab;
   display: flex;
   align-items: center;
@@ -491,12 +491,12 @@
 }
 .preset:hover {
   color: var(--text);
-  border-color: #4c4c3e;
+  border-color: var(--line-hover);
 }
 .presetOn {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .sideBtnRow {
@@ -516,16 +516,16 @@
   font-family: var(--diatype);
 }
 .sideBtn:hover {
-  border-color: #4c4c3e;
+  border-color: var(--line-hover);
 }
 .sideBtn:disabled {
   opacity: 0.35;
   cursor: default;
 }
 .sideBtnDanger:hover {
-  background: #3a2420;
-  border-color: #5a3028;
-  color: #fff;
+  background: var(--accent-wash-3);
+  border-color: var(--accent-edge);
+  color: var(--on-accent);
 }
 .holdRow {
   display: flex;

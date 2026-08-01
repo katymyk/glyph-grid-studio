@@ -104,7 +104,7 @@
   font-family: var(--diatype);
 }
 .chip:hover {
-  border-color: #4c4c3e;
+  border-color: var(--line-hover);
 }
 
 .segment {
@@ -154,7 +154,7 @@
 }
 .segmentOn {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -198,9 +198,9 @@
   font-size: 15px;
 }
 .colorRemove:hover {
-  color: #fff;
-  background: #3a2420;
-  border-color: #5a3028;
+  color: var(--on-accent);
+  background: var(--accent-wash-3);
+  border-color: var(--accent-edge);
 }
 
 /* switch (Base UI) */
@@ -241,7 +241,7 @@
 }
 .switchTrack[data-checked] .switchThumb {
   transform: translateX(15px);
-  background: #fff;
+  background: var(--on-accent);
 }
 
 /* buttons / inputs */
@@ -257,13 +257,13 @@
   font-family: var(--diatype);
 }
 .btn:hover {
-  border-color: #4c4c3e;
-  background: #2e2e24;
+  border-color: var(--line-hover);
+  background: var(--panel-3);
 }
 .btnPrimary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 .btn:disabled {
@@ -292,7 +292,7 @@
   color: var(--muted);
 }
 .kfOn {
-  color: var(--accent);
+  color: var(--accent-fg);
 }
 
 /* (the transport lives in the timeline dock now — see timeline.module.css) */

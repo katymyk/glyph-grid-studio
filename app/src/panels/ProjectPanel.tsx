@@ -137,7 +137,7 @@ export function ProjectAlerts() {
               </Button>
             </div>
           ))}
-          {error && <span style={{ color: 'var(--accent)' }}>{error}</span>}
+          {error && <span style={{ color: 'var(--accent-fg)' }}>{error}</span>}
         </div>
       )}
 
@@ -230,7 +230,7 @@ export function ProjectPanel() {
       </div>
 
       {error && (
-        <p style={{ fontSize: 10.5, color: 'var(--accent)', lineHeight: 1.5, marginTop: 8 }}>{error}</p>
+        <p style={{ fontSize: 10.5, color: 'var(--accent-fg)', lineHeight: 1.5, marginTop: 8 }}>{error}</p>
       )}
 
       <p style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 8 }}>

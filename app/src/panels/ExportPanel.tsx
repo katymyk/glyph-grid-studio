@@ -171,7 +171,7 @@ export function ExportPanel() {
           <p
             style={{
               fontSize: 10.5,
-              color: 'var(--accent)',
+              color: 'var(--accent-fg)',
               lineHeight: 1.5,
               marginTop: 8,
               whiteSpace: 'pre-wrap',

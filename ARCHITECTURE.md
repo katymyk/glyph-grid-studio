@@ -366,6 +366,20 @@ means transparent, and that now works end-to-end for canvas, PNG, SVG and JSON. 
 the exception: the format carries no alpha here, so `gif.ts` composites over white and
 the button says so.
 
+GIF has a second disclosed limit, for the same reason the element cap has one. gif.js needs
+every frame in memory *uncompressed* before it can start encoding — 8.3MB per frame at
+1920×1080, ~830MB for four seconds, which is what made the export crawl — and then maps and
+packs every one of those pixels. So `GIF_MAX_SIDE` caps the longest side at 720, and the real
+output size is printed on the button (`GIF (animated · 720×405)`) rather than applied quietly.
+MP4 and the PNG sequence stay full-resolution; a full-HD GIF is a file nobody asked for.
+
+The cap scales the *paint*, not the scene: `scene.width/height` remain the logical space, so
+`resolveScene` produces the identical element list and the identical sample-cache keys — same
+composition, smaller raster. And `gifButtonLabel` lives in `gif.ts` rather than in the panel
+because the Export panel is collapsed by default and a collapsed Collapsible renders no
+children under SSR, so a label built in the component could not be asserted headlessly.
+Keeping it beside the constant makes "the cap is visible" something the build checks.
+
 ### 13d. The element cap
 
 Cell size is a free slider and the canvas can be 8000px, so "cell 3 on a 4K canvas"

@@ -17,6 +17,7 @@ import { primeImage, primeSample, sampleSource } from './engine/imageSample';
 import { beginSourceProbe, sourcePending } from './engine/sourceReady';
 import { clipMs, isVideoRef, videoInfo, type VideoInfo } from './engine/videoSource';
 import { settleSources } from './engine/export/frames';
+import { gifButtonLabel, gifSize, gifWorkers } from './engine/export/gif';
 import {
   mp4Supported,
   MP4_UNSUPPORTED,
@@ -635,6 +636,45 @@ async function asyncChecks(): Promise<void> {
 }
 
 // ------------------------------------------------- the MP4 codec ladder
+sec('GIF resolution cap');
+{
+  const s720 = gifSize(1920, 1080);
+  ok('1920×1080 caps to 720 on the long side', s720.width === 720 && s720.height === 405,
+    `${s720.width}×${s720.height}`);
+  const tall = gifSize(1080, 1920);
+  ok('portrait caps on the long side too', tall.width === 405 && tall.height === 720,
+    `${tall.width}×${tall.height}`);
+  const sq = gifSize(1080, 1080);
+  ok('square caps to 720×720', sq.width === 720 && sq.height === 720);
+  const small = gifSize(640, 480);
+  ok('a small canvas is never upscaled', small.width === 640 && small.height === 480);
+  const tiny = gifSize(1, 1);
+  ok('never rounds a dimension to zero', tiny.width === 1 && tiny.height === 1);
+  ok('aspect is preserved to within a pixel',
+    Math.abs(s720.width / s720.height - 1920 / 1080) < 0.01);
+
+  ok('workers default to 4 when the core count is unknown', gifWorkers(undefined, 100) === 4);
+  ok('workers are capped at 8 (a memory bound, not a CPU one)', gifWorkers(16, 100) === 8);
+  ok('never more workers than frames', gifWorkers(8, 3) === 3);
+  ok('always at least one worker', gifWorkers(0, 100) >= 1);
+}
+
+sec('the GIF cap discloses itself on the button');
+{
+  // This protects the honesty property rather than the maths: if the cap ever stops being
+  // shown to the user, the build fails.
+  ok('the label names the real output size',
+    gifButtonLabel({ width: 1920, height: 1080, background: '#fff' }) === 'GIF (animated · 720×405)',
+    gifButtonLabel({ width: 1920, height: 1080, background: '#fff' }));
+  ok('and follows the canvas',
+    gifButtonLabel({ width: 1080, height: 1080, background: '#fff' }) === 'GIF (animated · 720×720)');
+  ok('an uncapped canvas still states its size (no special case to drift)',
+    gifButtonLabel({ width: 640, height: 480, background: '#fff' }) === 'GIF (animated · 640×480)');
+  ok('a transparent scene also says "on white"',
+    gifButtonLabel({ width: 1920, height: 1080, background: null }) ===
+      'GIF (animated · 720×405 · on white)');
+}
+
 sec('MP4 codec ladder');
 // The AE/Premiere ordering is a requirement, not a preference, so it is a test rather
 // than a comment: H.264 must be exhausted (hardware AND software) before anything else.

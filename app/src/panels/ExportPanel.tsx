@@ -8,7 +8,7 @@ import { download } from '../lib/download';
 import { sceneToSVG } from '../engine/export/svg';
 import { sceneToJSON } from '../engine/export/json';
 import { sceneToPNGBlob } from '../engine/export/png';
-import { sceneToGIF } from '../engine/export/gif';
+import { gifButtonLabel, sceneToGIF } from '../engine/export/gif';
 import { sceneToSequence } from '../engine/export/sequence';
 import { MP4_UNSUPPORTED, mp4Supported, sceneToMP4 } from '../engine/export/mp4';
 import { settleSources } from '../engine/export/frames';
@@ -98,11 +98,10 @@ export function ExportPanel() {
     });
 
   const pct = (tag: string) => (busy?.startsWith(tag) ? busy.split(':')[1] : null);
-  const gifLabel = pct('gif')
-    ? `GIF… ${pct('gif')}%`
-    : scene.background === null
-      ? 'GIF (animated · on white)'
-      : 'GIF (animated)';
+  // The GIF resolution cap is disclosed on the button rather than applied quietly — same
+  // principle as the halftone element cap: a limit you can't see reads as a bug. The label
+  // is built in gif.ts so that disclosure is checkable headlessly (see gifButtonLabel).
+  const gifLabel = pct('gif') ? `GIF… ${pct('gif')}%` : gifButtonLabel(scene);
   const seqLabel = pct('seq') ? `Frames… ${pct('seq')}%` : 'PNG sequence (.zip)';
   const mp4Label = pct('mp4')
     ? `MP4… ${pct('mp4')}%`

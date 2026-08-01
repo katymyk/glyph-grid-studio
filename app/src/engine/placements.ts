@@ -81,8 +81,8 @@ function hash01(i: number): number {
 /** One side of a morph at handover progress `w`. `leaving` = the base mode's set. */
 function handOff(list: Placement[], w: number, style: MorphStyle, leaving: boolean): Placement[] {
   if (style === 'dissolve') {
-    // Each element has its own switch-over point, so symbols pop out one by one
-    // as particles pop in — crisper than a crossfade over the same duration.
+    // Each element has its own switch-over point, so one mode's elements pop out one
+    // by one as the other's pop in — crisper than a crossfade over the same duration.
     return list.filter((_, i) => (leaving ? hash01(i) >= w : hash01(i) < w));
   }
   const share = leaving ? 1 - w : w;

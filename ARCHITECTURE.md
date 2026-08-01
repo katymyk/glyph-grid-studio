@@ -10,7 +10,8 @@ right call for a one-mode toy. The new goals outgrow it:
 
 - **Timeline animation** — animate any parameter from a start value to an end value
   (and beyond: multiple keyframes, easing).
-- **Particle mode** — a third render mode beside generative and ASCII.
+- **More render modes** — beside generative and ASCII. (A particle mode was tried and
+  removed; halftone is the third mode that shipped.)
 - **Mixing modes** — combine modes in one composition (i.e. layers).
 - **Flexibility / extensibility** — add modes, params, and export formats without
   rewiring everything.
@@ -44,7 +45,7 @@ Scene {
 
 Layer {
   id, name, visible
-  mode: 'generative' | 'ascii' | 'particle' | …   // registry key
+  mode: 'generative' | 'ascii' | 'halftone' | …   // registry key
   opacity: Param<number>
   blendMode: GlobalCompositeOperation             // 'source-over', 'multiply', …
   spawn: SpawnZone
@@ -61,14 +62,14 @@ Keyframe<T> = { t, value, easeOut, easeIn, hold? }  // see §4b
 - **"Start frame → end frame"** = a param with two keyframes.
 - **"Mix modes"** = two layers with different `mode`s and a blend mode, *or* one layer
   with a `morph` (§4a) when the same artwork should change form over time.
-- **Particle mode** = one more entry in the mode registry (§5). Nothing else changes.
+- **A new render mode** = one more entry in the mode registry (§5). Nothing else changes.
 
-This is the After-Effects-style scene graph; timeline, particles, and mixing all fall
+This is the After-Effects-style scene graph; timeline, modes, and mixing all fall
 out of it instead of being special-cased.
 
 ### 4a. Mode morph — one layer, two modes over time
 
-`Layer.morph` is how a single animation starts as symbols and ends as particles
+`Layer.morph` is how a single animation starts as symbols and ends as a halftone
 without hand-animating two layers' opacities:
 
 ```
@@ -142,7 +143,7 @@ interface RenderMode {
 
 registerMode(generativeMode);
 registerMode(asciiMode);
-// later: registerMode(particleMode);
+registerMode(halftoneMode);
 ```
 
 Adding a mode = one new file that implements the interface and registers itself. The
@@ -205,7 +206,7 @@ glyph-grid-studio/
           index.ts            # registry: registerMode / getMode / listModes
           generative.ts
           ascii.ts
-          particle.ts         # (phase 4)
+          halftone/           # dot screen + dither methods
         paint.ts              # paintToCanvas(ctx, placements)
         export/
           frames.ts           # paintSettled / settleSources — no half-decoded frames
@@ -254,7 +255,7 @@ glyph-grid-studio/
 2. **Design system** — build `ui/` over Base UI, wired to `tokens.css`.
 3. **Parity** — rebuild all v1 panels; match today's feature set (generative + ASCII,
    spawn zones, colors, exports). Ship-switch the deploy.
-4. **New powers** — layers + keyframe timeline → particle mode → blend/compose.
+4. **New powers** — layers + keyframe timeline → more modes → blend/compose.
 5. **Timeline you can see** — the dock (§4b): draggable keyframes with their easing
    curve drawn between them, per-keyframe ease-in/out + presets, hold keys, and the
    mode-morph bar (§4a).

@@ -50,7 +50,7 @@ export function Stage() {
       setElementCount(drawn);
     }
     if (showGrid) {
-      // particle mode has no grid params — the guide simply doesn't apply there
+      // a mode need not have grid params — the guide simply doesn't apply there
       const colsP = layer.params.cols as Param<number> | undefined;
       const rowsP = layer.params.rows as Param<number> | undefined;
       let cols = colsP ? Number(resolveParam(colsP, playhead)) : 0;

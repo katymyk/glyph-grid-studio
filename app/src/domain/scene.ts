@@ -11,12 +11,12 @@ export type SpawnZone =
 /** How a layer hands over from its base mode to its morph target. */
 export type MorphStyle =
   | 'fade' // both modes overlap, one alpha-fades out while the other fades in
-  | 'dissolve'; // elements swap over one at a time (stipple/particle-ise)
+  | 'dissolve'; // elements swap over one at a time (stipple)
 
 /**
  * A mode change *inside one layer*: the layer renders its base mode, then over
  * [start, end] hands over to `mode` — e.g. start the animation as symbols and
- * end it as particles. The target keeps its own params (and its own keyframes),
+ * end it as a halftone. The target keeps its own params (and its own keyframes),
  * so both halves are dialled in independently.
  */
 export interface LayerMorph {

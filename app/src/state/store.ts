@@ -92,7 +92,7 @@ interface StudioState {
   setKeyframeHold: (layerId: string, slot: Slot, key: string, index: number, hold: boolean) => void;
   setTrackEasing: (layerId: string, slot: Slot, key: string, out: EaseHalf, easeIn: EaseHalf) => void;
 
-  // mode morph (symbols → particles inside one layer)
+  // mode morph (one mode hands over to another inside one layer)
   setMorphMode: (layerId: string, mode: string | null) => void;
   setMorphRange: (layerId: string, start: number, end: number) => void;
   setMorphStyle: (layerId: string, style: MorphStyle) => void;
@@ -485,7 +485,7 @@ export const useStudio = create<StudioState>((set, get) => ({
           morph: {
             mode,
             params,
-            // default: hold the symbols, hand over across the middle, land on particles
+            // default: hold the base mode, hand over across the middle, land on the target
             start: l.morph?.start ?? d * 0.2,
             end: l.morph?.end ?? d * 0.8,
             style: l.morph?.style ?? 'dissolve',

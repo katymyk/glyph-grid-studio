@@ -8,7 +8,7 @@ import styles from '../ui/ui.module.css';
 
 /**
  * Mode picker for the layer, plus the *mode morph*: a second mode this layer hands
- * over to partway through the animation (start as symbols, end as particles). The
+ * over to partway through the animation (start as symbols, end as a halftone). The
  * handover range and curve live on the timeline; this panel just arms it.
  */
 export function ModePanel() {

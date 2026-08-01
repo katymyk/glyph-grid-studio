@@ -4,7 +4,7 @@ import type { Placement } from '../../domain/scene';
 export interface ModeContext {
   width: number;
   height: number;
-  time: number; // seconds; used by time-based modes (particles). Others may ignore it.
+  time: number; // seconds; used by time-based modes (a video source). Others may ignore it.
   /** Scene frame rate. Lets a mode derive a stable frame index — round(time * fps) —
       which is what per-frame determinism needs: quantising to frames means the
       preview and every exported frame ask for byte-identical source data, and an
@@ -13,7 +13,7 @@ export interface ModeContext {
 }
 
 /**
- * A render mode. Adding one (e.g. particles) means implementing this interface
+ * A render mode. Adding one means implementing this interface
  * and calling registerMode — nothing else in the app changes.
  */
 export interface RenderMode {

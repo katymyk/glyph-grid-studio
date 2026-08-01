@@ -259,7 +259,7 @@ function MorphInspector({
           </label>
         </div>
         <div className={styles.presets}>
-          {styleBtn('dissolve', 'Dissolve', 'Elements swap one at a time — symbols pop out as particles pop in')}
+          {styleBtn('dissolve', 'Dissolve', 'Elements swap one at a time — one mode pops out as the other pops in')}
           {styleBtn('fade', 'Fade', 'Both modes overlap and cross-fade')}
         </div>
       </div>

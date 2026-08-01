@@ -301,7 +301,7 @@ export function Timeline() {
               {!anyRows && (
                 <div className={styles.empty}>
                   Nothing animated yet. Click the ◆ beside a slider to key it, or set a
-                  <strong> mode morph</strong> in the Mode panel to hand over from symbols to particles.
+                  <strong> mode morph</strong> in the Mode panel to hand over from one mode to another.
                 </div>
               )}
 

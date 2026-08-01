@@ -1,7 +1,6 @@
 import type { RenderMode } from './types';
 import { generativeMode } from './generative';
 import { asciiMode } from './ascii';
-import { particleMode } from './particle';
 import { halftoneMode } from './halftone';
 
 const registry = new Map<string, RenderMode>();
@@ -23,7 +22,6 @@ export function listModes(): RenderMode[] {
 // Built-in modes register on import.
 registerMode(generativeMode);
 registerMode(asciiMode);
-registerMode(particleMode);
 registerMode(halftoneMode);
 
 export type { RenderMode, ModeContext } from './types';

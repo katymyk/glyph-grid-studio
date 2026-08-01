@@ -62,8 +62,8 @@ const s = () => useStudio.getState();
 
 // ------------------------------------------------------------------- registry
 sec('mode registry');
-ok('all four modes registered', JSON.stringify(listModes().map((m) => m.key)) ===
-  JSON.stringify(['generative', 'ascii', 'particle', 'halftone']),
+ok('all three modes registered', JSON.stringify(listModes().map((m) => m.key)) ===
+  JSON.stringify(['generative', 'ascii', 'halftone']),
   listModes().map((m) => m.key).join(','));
 ok('getMode("halftone") resolves (no import cycle)', (() => {
   try {

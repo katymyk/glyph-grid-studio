@@ -18,6 +18,7 @@ import { beginSourceProbe, sourcePending } from './engine/sourceReady';
 import { clipMs, isVideoRef, videoInfo, type VideoInfo } from './engine/videoSource';
 import { settleSources } from './engine/export/frames';
 import { gifButtonLabel, gifSize, gifWorkers } from './engine/export/gif';
+import { frameAt, frameCount, timeOfFrame } from './domain/timeline';
 import {
   mp4Supported,
   MP4_UNSUPPORTED,
@@ -636,6 +637,43 @@ async function asyncChecks(): Promise<void> {
 }
 
 // ------------------------------------------------- the MP4 codec ladder
+sec('the transport lands on frames');
+{
+  const st = useStudio.getState();
+  st.reset();
+  st.setFps(25);
+  st.setDuration(4);
+  const g = () => useStudio.getState().scene;
+  const at = () => frameAt(g(), useStudio.getState().playhead);
+
+  st.setPlayhead(0);
+  for (let i = 0; i < 7; i++) st.stepFrame(1);
+  ok('seven steps forward land on frame 7 exactly', at() === 7, `f${at()}`);
+  ok('stepping stops playback', useStudio.getState().playing === false);
+  for (let i = 0; i < 20; i++) st.stepFrame(-1);
+  ok('stepping back clamps at frame 0', at() === 0, `f${at()}`);
+  for (let i = 0; i < 200; i++) st.stepFrame(1);
+  ok('stepping forward clamps at the last frame the exporters write',
+    at() === frameCount(g()) - 1, `f${at()} of ${frameCount(g())}`);
+
+  // setPlayhead stays a raw setter: the easing inspector parks it on a key deliberately,
+  // and a key can sit off-grid.
+  st.setPlayhead(1.234);
+  ok('setPlayhead does NOT snap (sub-frame writes are legitimate)',
+    Math.abs(useStudio.getState().playhead - 1.234) < 1e-9, String(useStudio.getState().playhead));
+  st.setPlayhead(999);
+  ok('setPlayhead clamps to the duration', useStudio.getState().playhead === 4);
+  st.setPlayhead(-1);
+  ok('...and to zero', useStudio.getState().playhead === 0);
+
+  st.setPlayhead(timeOfFrame(g(), 25)); // 1.00s at 25fps
+  st.setFps(12);
+  ok('changing fps re-snaps onto the new grid', at() === frameAt(g(), 1) && at() === 12, `f${at()}`);
+  ok('and keeps roughly the same second', Math.abs(useStudio.getState().playhead - 1) < 0.05,
+    `${useStudio.getState().playhead}s`);
+  st.reset();
+}
+
 sec('GIF resolution cap');
 {
   const s720 = gifSize(1920, 1080);

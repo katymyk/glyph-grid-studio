@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { keyIndexAt, resolveParam, type Keyframe, type Param } from '../domain/params';
 import { sampleCurve } from '../domain/easing';
+import { frameAt, frameAtWall, frameCount, timeOfFrame, type PlayAnchor } from '../domain/timeline';
 import type { Layer, LayerMorph } from '../domain/scene';
 import { getMode } from '../engine/modes';
 import { readParam, useStudio, type Slot, type TimelineSel } from '../state/store';
@@ -63,23 +64,47 @@ export function Timeline() {
   const deleteKeyframe = useStudio((s) => s.deleteKeyframe);
 
   const { duration, fps } = scene;
-  const totalFrames = Math.max(1, Math.round(fps * duration));
-  const frame = Math.round(playhead * fps);
-  const snap = (t: number) => Math.max(0, Math.min(duration, Math.round(t * fps) / fps));
+  const totalFrames = frameCount(scene);
+  const frame = frameAt(scene, playhead);
+  const snap = (t: number) => timeOfFrame(scene, frameAt(scene, t));
 
-  // advance the playhead while playing, looping at duration
+  /**
+   * Advance the playhead while playing — on the scene's frame grid, not on the display's.
+   *
+   * The early return when the frame hasn't changed is the load-bearing line, and it is what
+   * makes `fps` a real setting: at 12fps on a 120Hz panel nine ticks in ten do nothing, so
+   * the preview visibly steps AND the store is notified twelve times a second instead of a
+   * hundred and twenty. Everything subscribed to the playhead — the canvas repaint, every
+   * sidebar control, this dock — was previously paying display rate for a 12fps comp.
+   *
+   * Wall-clock anchored rather than accumulated, so a long frame costs one skipped frame
+   * instead of permanent drift (see `frameAtWall`).
+   */
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
-    let last = performance.now();
+    const st = useStudio.getState();
+    let anchor: PlayAnchor = {
+      frame: frameAt(st.scene, st.playhead),
+      wallMs: performance.now(),
+      fps: st.scene.fps,
+    };
+    let shown = -1;
     const tick = (now: number) => {
-      const dt = (now - last) / 1000;
-      last = now;
-      const d = useStudio.getState().scene.duration || 0.1;
-      let t = useStudio.getState().playhead + dt;
-      if (t >= d) t %= d;
-      setPlayhead(t);
       raf = requestAnimationFrame(tick);
+      const grid = useStudio.getState().scene;
+      if (grid.fps !== anchor.fps) {
+        // fps is an ordinary control and gets dragged mid-playback. Re-anchor on the
+        // SECOND we are at, not the frame index: the same index means a different time
+        // under a new grid, so reusing it would jump the playhead.
+        const at = shown < 0 ? anchor.frame / Math.max(1, anchor.fps) : shown / Math.max(1, anchor.fps);
+        anchor = { frame: frameAt(grid, at), wallMs: now, fps: grid.fps };
+        shown = -1;
+      }
+      const f = frameAtWall(anchor, now, frameCount(grid));
+      if (f === shown) return;
+      shown = f;
+      setPlayhead(timeOfFrame(grid, f));
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
@@ -545,7 +570,7 @@ function MorphRow({
         <div
           className={`${styles.morphBar} ${selHere ? styles.morphBarSel : ''}`}
           style={{ left: `${left}%`, width: `${width}%` }}
-          title={`${from} → ${to} · frames ${Math.round(morph.start * fps)}–${Math.round(morph.end * fps)} · drag to move`}
+          title={`${from} → ${to} · frames ${frameAt({ fps }, morph.start)}–${frameAt({ fps }, morph.end)} · drag to move`}
           onPointerDown={(e) => begin(e, 'body')}
           onPointerMove={move}
           onPointerUp={end}

@@ -15,6 +15,7 @@ import {
   type Param,
 } from '../domain/params';
 import type { EaseHalf } from '../domain/easing';
+import { frameAt, frameCount, timeOfFrame } from '../domain/timeline';
 import { defaultScene } from '../domain/defaults';
 import type { Layer, LayerMorph, MorphStyle, Scene, SpawnZone } from '../domain/scene';
 import { getMode } from '../engine/modes';
@@ -569,28 +570,43 @@ export const useStudio = create<StudioState>((set, get) => ({
   setDuration: (d) => {
     scheduleRecord(get().scene);
     set((s) => {
-      const duration = Math.max(0.1, d);
-      return {
-        future: [],
-        scene: { ...s.scene, duration },
-        playhead: Math.min(s.playhead, duration),
-      };
+      const scene = { ...s.scene, duration: Math.max(0.1, d) };
+      // Re-snap: shortening the loop can leave the playhead past the end, and either way
+      // the frame grid it was on no longer exists.
+      return { future: [], scene, playhead: timeOfFrame(scene, frameAt(scene, s.playhead)) };
     });
   },
 
   setFps: (fps) => {
     scheduleRecord(get().scene);
-    set((s) => ({ future: [], scene: { ...s.scene, fps: Math.max(1, Math.min(60, Math.round(fps))) } }));
+    set((s) => {
+      const scene = { ...s.scene, fps: Math.max(1, Math.min(60, Math.round(fps))) };
+      // Land on the new grid, or the preview sits on a time the grid never visits. This
+      // does move a playhead deliberately parked off-grid; showing a frame that doesn't
+      // exist is the worse of the two.
+      return { future: [], scene, playhead: timeOfFrame(scene, frameAt(scene, s.playhead)) };
+    });
   },
 
+  // A raw clamped setter on purpose — NOT snapped to the frame grid. Sub-frame writes are
+  // legitimate: the timeline and the easing inspector both `setPlayhead(key.t)` so that
+  // sidebar edits target that key, and a key may sit anywhere. Callers that navigate
+  // frames (the playback loop, stepFrame, the ruler scrub) snap for themselves.
   setPlayhead: (t) =>
-    set((s) => ({ playhead: Math.max(0, Math.min(s.scene.duration, t)) })),
+    set((s) => {
+      const playhead = Math.max(0, Math.min(s.scene.duration, t));
+      // Idempotence guard, same reason as setElementCount: zustand notifies every
+      // subscriber on any set, and the panel selectors resolve a layer's whole param set
+      // per notification. A scrub that moves within one frame should cost nothing.
+      return s.playhead === playhead ? {} : { playhead };
+    }),
 
   stepFrame: (delta) =>
     set((s) => {
-      const fps = s.scene.fps || 25;
-      const f = Math.round(s.playhead * fps) + delta;
-      return { playing: false, playhead: Math.max(0, Math.min(s.scene.duration, f / fps)) };
+      const f = frameAt(s.scene, s.playhead) + delta;
+      // Clamp in frames, not seconds, so a step always lands on the grid.
+      const clamped = Math.max(0, Math.min(frameCount(s.scene) - 1, f));
+      return { playing: false, playhead: timeOfFrame(s.scene, clamped) };
     }),
 
   play: () => set({ playing: true }),

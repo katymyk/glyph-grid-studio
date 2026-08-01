@@ -1,11 +1,12 @@
 import JSZip from 'jszip';
 import type { Scene } from '../../domain/scene';
+import { frameCount } from '../../domain/timeline';
 import { paintSettled } from './frames';
 
 /** Render the scene across one loop as a zip of lossless PNG frames (for After Effects). */
 export async function sceneToSequence(scene: Scene, onProgress?: (p: number) => void): Promise<Blob> {
   const fps = scene.fps || 25;
-  const total = Math.max(1, Math.round(fps * scene.duration));
+  const total = frameCount(scene);
   const zip = new JSZip();
   const off = document.createElement('canvas');
   off.width = scene.width;

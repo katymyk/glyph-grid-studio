@@ -1,6 +1,7 @@
 import GIF from 'gif.js';
 import workerUrl from 'gif.js/dist/gif.worker.js?url';
 import type { Scene } from '../../domain/scene';
+import { frameCount } from '../../domain/timeline';
 import { paintSettled } from './frames';
 
 /**
@@ -63,7 +64,7 @@ export function gifButtonLabel(scene: {
     The worker is bundled + same-origin (via ?url), so no cross-origin worker issue. */
 export async function sceneToGIF(scene: Scene, onProgress?: (p: number) => void): Promise<Blob> {
   const fps = scene.fps || 25;
-  const total = Math.max(1, Math.round(fps * scene.duration));
+  const total = frameCount(scene);
   const delay = Math.round(1000 / fps);
   const { width, height } = gifSize(scene.width, scene.height);
   const workers = gifWorkers(

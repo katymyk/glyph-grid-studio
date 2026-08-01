@@ -267,8 +267,28 @@ Each phase leaves something that runs.
   (`grid-template-columns: var(--gutter) 1fr`), which is what keeps them on the same
   time axis — the playhead is an `inset: 0` overlay using the same grid, not a
   hand-computed offset.
-- Time is **displayed in frames** (`round(t × fps)`) because that's the unit the PNG
-  sequence and GIF exports emit; the model stays in seconds.
+- Time is **displayed in frames** because that's the unit the PNG sequence and GIF exports
+  emit; the model stays in seconds. All of those conversions go through `domain/timeline.ts`
+  — they used to be open-coded in eight places and agreed by luck.
+- **`fps` is the preview's frame rate, not just an export setting.** The playback loop
+  advances on the 1/fps grid and returns early when the frame hasn't changed, so a 12fps
+  comp visibly steps at 12fps and the store is notified twelve times a second instead of at
+  display rate. That early return is the whole optimisation: everything subscribed to the
+  playhead — the canvas repaint, every sidebar control, the dock — previously paid 120Hz for
+  a 12fps comp. Measured: 12 repaints per two seconds at fps 6, 50 at fps 25.
+- The loop is **wall-clock anchored, not accumulated** (`frameAtWall`). Adding `dt` to a
+  running total compounds every rounding error and every long frame; deriving the frame from
+  the distance to the anchor cannot drift. A slow frame therefore *skips* rather than
+  replaying — someone judging timing needs real time, and a preview quietly running at 60%
+  speed is worse than one that drops frames.
+- **Playback stops one frame short of `duration`.** Frame 0 *is* frame N in a loop, and
+  every exporter writes `0..frameCount-1`, so the preview now visits exactly the set of times
+  the files contain. Visible consequence worth knowing: a 0→100 ramp keyed at `duration`
+  tops out on screen at `100·(N-1)/N`.
+- `setPlayhead` stays a **raw clamped setter**, deliberately not snapped: the timeline and
+  the easing inspector both park the playhead on a key's exact time so that sidebar edits
+  target that key, and a key can sit anywhere. Snapping there would silently retarget the
+  edit. Callers that navigate *frames* snap for themselves.
 - Drags snap to frames. Dragging a key past a neighbour re-sorts the list, so
   `moveKeyframe` returns the key's new index and the store re-points the selection at
   it — otherwise the drag would jump to whatever key inherited the old index.

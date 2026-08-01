@@ -20,6 +20,7 @@
  */
 import type { BufferTarget, CanvasSource, Output, VideoCodec } from 'mediabunny';
 import type { Scene } from '../../domain/scene';
+import { frameCount } from '../../domain/timeline';
 import { paintSettled } from './frames';
 
 /** One rung of the encode ladder; everything else about the encode is fixed. */
@@ -117,7 +118,7 @@ export async function sceneToMP4(
   const { Output, Mp4OutputFormat, BufferTarget, CanvasSource, Quality } = await import('mediabunny');
 
   const fps = scene.fps || 25;
-  const total = Math.max(1, Math.round(fps * scene.duration));
+  const total = frameCount(scene);
 
   // H.264 encodes 16×16 macroblocks over a 4:2:0 chroma plane, so an odd width or
   // height is rejected outright. Round UP to even and scale the paint to fit: cropping

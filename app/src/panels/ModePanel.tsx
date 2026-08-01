@@ -1,4 +1,5 @@
 import { listModes } from '../engine/modes';
+import { frameAt } from '../domain/timeline';
 import { useStudio, useActiveLayer } from '../state/store';
 import { Panel } from '../ui/Panel';
 import { Segmented } from '../ui/Segmented';
@@ -44,9 +45,7 @@ export function ModePanel() {
         </Field>
         <p style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, margin: '2px 0 0' }}>
           {layer.morph
-            ? `Hands over frames ${Math.round(layer.morph.start * fps)}–${Math.round(
-                layer.morph.end * fps,
-              )}. Drag the bar on the timeline to retime it; select it to set the curve.`
+            ? `Hands over frames ${frameAt({ fps }, layer.morph.start)}–${frameAt({ fps }, layer.morph.end)}. Drag the bar on the timeline to retime it; select it to set the curve.`
             : 'Pick a second mode to start the animation in this mode and end it in that one.'}
         </p>
       </div>

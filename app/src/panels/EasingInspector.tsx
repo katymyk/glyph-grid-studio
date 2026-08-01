@@ -1,5 +1,6 @@
 import { keysOf, type Keyframe, type Param } from '../domain/params';
 import { SEGMENT_PRESETS, type EaseHalf } from '../domain/easing';
+import { frameAt, frameCount, timeOfFrame } from '../domain/timeline';
 import type { Layer, MorphStyle } from '../domain/scene';
 import { getMode } from '../engine/modes';
 import { readParam, useStudio, type Slot } from '../state/store';
@@ -105,7 +106,7 @@ function KeyInspector({
         {label}
       </p>
       <p className={styles.sideSub}>
-        frame {Math.round(key.t * fps)} · {key.t.toFixed(2)}s · value{' '}
+        frame {frameAt({ fps }, key.t)} · {key.t.toFixed(2)}s · value{' '}
         {trackValueAt(layer, slot, param, key.t)}
       </p>
 
@@ -224,7 +225,7 @@ function MorphInspector({
         {getMode(layer.mode).label} → {getMode(m.mode).label}
       </p>
       <p className={styles.sideSub}>
-        frames {Math.round(m.start * fps)}–{Math.round(m.end * fps)} · {span.toFixed(2)}s
+        frames {frameAt({ fps }, m.start)}–{frameAt({ fps }, m.end)} · {span.toFixed(2)}s
       </p>
 
       <div className={styles.block}>
@@ -236,9 +237,11 @@ function MorphInspector({
               className={styles.numTiny}
               type="number"
               min={0}
-              max={Math.round(duration * fps)}
-              value={Math.round(m.start * fps)}
-              onChange={(e) => setMorphRange(layer.id, Number(e.target.value) / fps, m.end)}
+              max={frameCount({ fps, duration }) - 1}
+              value={frameAt({ fps }, m.start)}
+              onChange={(e) =>
+                setMorphRange(layer.id, timeOfFrame({ fps, duration }, Number(e.target.value)), m.end)
+              }
             />
           </label>
           <label className={styles.easeField}>
@@ -247,9 +250,11 @@ function MorphInspector({
               className={styles.numTiny}
               type="number"
               min={0}
-              max={Math.round(duration * fps)}
-              value={Math.round(m.end * fps)}
-              onChange={(e) => setMorphRange(layer.id, m.start, Number(e.target.value) / fps)}
+              max={frameCount({ fps, duration }) - 1}
+              value={frameAt({ fps }, m.end)}
+              onChange={(e) =>
+                setMorphRange(layer.id, m.start, timeOfFrame({ fps, duration }, Number(e.target.value)))
+              }
             />
           </label>
         </div>

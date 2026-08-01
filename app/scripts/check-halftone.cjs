@@ -20,6 +20,7 @@ const dither = require(D + '/engine/halftone/dither.js');
 const runs = require(D + '/engine/halftone/runs.js');
 const field = require(D + '/engine/halftone/field.js');
 const params = require(D + '/domain/params.js');
+const timeline = require(D + '/domain/timeline.js');
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -788,6 +789,57 @@ sec('REGRESSION: ring / cross / bar must not degenerate to a disc or square');
   ok('thickness never drops below half a pixel', (() => {
     const out = dots.buildDots(f, W, H, { ...CFG, shape: 'ring', thickness: 0.0001 });
     return out.every((p) => p.h >= 0.5);
+  })());
+}
+
+// ------------------------------------------------------------------ frame grid
+sec('the frame grid (fps is the preview rate now, not just an export setting)');
+{
+  const { frameCount, frameAt, timeOfFrame, frameAtWall } = timeline;
+  ok('12fps over 3s is 36 frames', frameCount({ fps: 12, duration: 3 }) === 36);
+  ok('a very short loop still has one frame', frameCount({ fps: 25, duration: 0.001 }) === 1);
+  ok('25fps over 0.1s is 3 frames (round, matching every exporter)',
+    frameCount({ fps: 25, duration: 0.1 }) === 3);
+
+  // The property the readout, keyframe snapping and the playback loop all silently rely
+  // on. This is where float error bites: 12/12*12 is 11.999999999999998.
+  ok('frame -> time -> frame is exact for every rate', (() => {
+    for (const fps of [1, 8, 12, 24, 25, 30, 60]) {
+      const g = { fps, duration: 4 };
+      for (let f = 0; f <= frameCount(g); f++) {
+        if (frameAt(g, timeOfFrame(g, f)) !== Math.min(f, frameAt(g, g.duration))) return false;
+      }
+    }
+    return true;
+  })());
+  ok('timeOfFrame clamps both ends', (() => {
+    const g = { fps: 25, duration: 2 };
+    return timeOfFrame(g, -5) === 0 && timeOfFrame(g, 9999) === 2;
+  })());
+
+  const anchor = { frame: 0, wallMs: 1000, fps: 12 };
+  ok('one frame at 12fps takes ~83ms', frameAtWall(anchor, 1000 + 83, 36) === 0 &&
+    frameAtWall(anchor, 1000 + 84, 36) === 1, `${frameAtWall(anchor, 1084, 36)}`);
+  ok('a second advances exactly 12 frames', frameAtWall(anchor, 2000, 36) === 12);
+  ok('it wraps at the frame count', frameAtWall(anchor, 1000 + 3000, 36) === 0);
+  // Preview and export must visit the same set of times; every exporter writes 0..total-1.
+  ok('it never returns `total` (preview visits exactly what the exporters write)', (() => {
+    for (let ms = 0; ms < 6000; ms += 7) if (frameAtWall(anchor, 1000 + ms, 36) >= 36) return false;
+    return true;
+  })());
+  ok('a 500ms stall skips rather than replaying', frameAtWall(anchor, 1500, 36) === 6);
+  ok('a clock that went backwards clamps to the anchor', frameAtWall(anchor, 0, 36) === 0);
+  ok('a single-frame loop never advances', (() => {
+    for (const ms of [0, 100, 5000]) if (frameAtWall(anchor, 1000 + ms, 1) !== 0) return false;
+    return true;
+  })());
+  // The regression the anchor exists to prevent: an accumulating dt loop fails this.
+  ok('no drift after ten minutes', frameAtWall(anchor, 1000 + 600_000, 36) === (600 * 12) % 36,
+    `${frameAtWall(anchor, 601_000, 36)}`);
+  ok('...and the answer only depends on elapsed time, not on how it was sampled', (() => {
+    // Sampling the same instant via a different anchor frame must agree.
+    const a = { frame: 5, wallMs: 0, fps: 24 };
+    return frameAtWall(a, 10_000, 1000) === 5 + 240;
   })());
 }
 

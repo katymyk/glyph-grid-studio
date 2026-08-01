@@ -89,18 +89,19 @@ export function Stage() {
         ctx.lineWidth = 1;
         const cw = scene.width / cols;
         const ch = scene.height / rows;
+        // One path for the whole grid, not one per line: this can be 700 lines, it runs
+        // inside the same effect as the artwork, and it is on screen exactly when someone
+        // is dragging `cell` and cares about latency.
+        ctx.beginPath();
         for (let i = 1; i < cols; i++) {
-          ctx.beginPath();
           ctx.moveTo(i * cw, 0);
           ctx.lineTo(i * cw, scene.height);
-          ctx.stroke();
         }
         for (let j = 1; j < rows; j++) {
-          ctx.beginPath();
           ctx.moveTo(0, j * ch);
           ctx.lineTo(scene.width, j * ch);
-          ctx.stroke();
         }
+        ctx.stroke();
         ctx.restore();
       }
     }

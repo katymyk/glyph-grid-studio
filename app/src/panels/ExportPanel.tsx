@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useStudio } from '../state/store';
+import { frameCount } from '../domain/timeline';
 import { Panel } from '../ui/Panel';
 import { Field } from '../ui/Field';
 import { Button } from '../ui/Button';
@@ -30,7 +31,7 @@ export function ExportPanel() {
   // the encoder bundle just to ask the question.
   const canMP4 = mp4Supported();
 
-  const frames = Math.max(1, Math.round(scene.fps * scene.duration));
+  const frames = frameCount(scene);
   // Reported by the Stage's last paint rather than recomputed here — resolving the
   // scene a second time would double the cost of every edit. A halftone screen can
   // reach six figures, which is what makes this worth showing before an export.

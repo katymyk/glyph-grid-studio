@@ -1,0 +1,6 @@
+# Per-machine Claude Code approvals. The project-wide settings next to it
+# (.claude/settings.json) ARE committed, so the whole team shares them.
+#
+# Note this can't be folded into app/.gitignore's `*.local`: that pattern matches names
+# ENDING in `.local`, and this one ends in `.json`.
+.claude/settings.local.json

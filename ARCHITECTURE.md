@@ -456,3 +456,37 @@ offer for video — decoders differ.
 - **Honest degradation.** `mp4Supported()` is a synchronous check that disables the button
   without loading the encoder, and codecs are tried in order (`avc` first — it is what
   After Effects and Premiere want) with a readable message if none work.
+
+### 15a. Negotiate, don't interrogate
+
+The first version asked `getFirstEncodableVideoCodec` whether a codec was usable, then
+encoded with a *differently shaped* config. That cost us Safari outright, and the failure is
+worth remembering because the shape of it recurs:
+
+- A qualitative `QUALITY_HIGH` makes mediabunny prefer quantizer-based rate control, which
+  puts `bitrateMode: 'quantizer'` — an enum member only Chromium has — into the config.
+- A browser whose IDL lacks that member **throws** during dictionary conversion, so
+  `VideoEncoder.isConfigSupported` *rejects* rather than answering "unsupported", and
+  mediabunny's own fallback only walks across a resolved `false`.
+- The rejection propagated out of the capability probe and killed the export before a
+  single frame was painted. Worse, the rejected promise is memoised, so every later click
+  in that page session failed identically.
+
+Two rules came out of it. **A capability probe that asks a different question than the real
+call is a second source of truth, and the two will disagree** — so `MP4_ATTEMPTS` is now
+walked by actually encoding frame 0, and "can this browser do it" and "did this browser do
+it" are the same event. And **`preferBitrate` is load-bearing**, not a tuning knob: it keeps
+the problematic enum out of the config entirely.
+
+The retry is cheap because of one fact worth stating: `configure()` happens inside the first
+`source.add()`, not in `output.start()` (`CanvasSource` has no `_start` of its own). Frame 0
+is painted once before the ladder, `add` copies the canvas rather than consuming it, and a
+rejected rung costs a muxer header — so the ladder never re-renders the animation. An encoder
+error that surfaces later, on frame 1+, is reported rather than retried: a different codec is
+unlikely to fix it and re-rendering to find out is not worth it.
+
+Because none of this can be tested here (no Safari automation), the diagnostics carry the
+weight: every rung logs, and the thrown message names each attempted config and the browser's
+own `error.name` — `TypeError` (an IDL member was rejected) vs `NotSupportedError` (the
+browser understood and said no) vs `EncodingError` (the encoder died) are three different
+bugs that otherwise read identically.

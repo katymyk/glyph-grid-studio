@@ -24,6 +24,8 @@ export function ExportPanel() {
   const setFps = useStudio((s) => s.setFps);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** A successful export that still needs to say something (e.g. it fell back a codec). */
+  const [note, setNote] = useState<string | null>(null);
   // Synchronous feature test, so the button can be honestly disabled without pulling in
   // the encoder bundle just to ask the question.
   const canMP4 = mp4Supported();
@@ -45,6 +47,7 @@ export function ExportPanel() {
   const run = async (tag: string, job: (onProgress: (p: number) => void) => Promise<void>) => {
     setBusy(`${tag}:0`);
     setError(null);
+    setNote(null);
     try {
       await job((p) => setBusy(`${tag}:${Math.round(p * 100)}`));
     } catch (e) {
@@ -80,9 +83,19 @@ export function ExportPanel() {
       download(await sceneToSequence(scene, onProgress), `glyph-sequence_${scene.fps}fps.zip`),
     );
   const runMP4 = () =>
-    run('mp4', async (onProgress) =>
-      download(await sceneToMP4(scene, onProgress), `glyph-grid_${scene.fps}fps.mp4`),
-    );
+    run('mp4', async (onProgress) => {
+      const { blob, codec } = await sceneToMP4(scene, onProgress);
+      // Name the codec when H.264 wasn't available. A silent HEVC-in-MP4 that Premiere
+      // refuses to open is worse than a longer filename.
+      const suffix = codec === 'avc' ? '' : `_${codec}`;
+      download(blob, `glyph-grid_${scene.fps}fps${suffix}.mp4`);
+      if (codec !== 'avc') {
+        setNote(
+          `This browser could not encode H.264, so the file is ${codec.toUpperCase()}. It plays in ` +
+            `a browser, but some editors will not import it — use the PNG sequence if yours refuses.`,
+        );
+      }
+    });
 
   const pct = (tag: string) => (busy?.startsWith(tag) ? busy.split(':')[1] : null);
   const gifLabel = pct('gif')
@@ -145,8 +158,23 @@ export function ExportPanel() {
             {MP4_UNSUPPORTED}
           </p>
         )}
+        {note && (
+          <p style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 8 }}>{note}</p>
+        )}
         {error && (
-          <p style={{ fontSize: 10.5, color: 'var(--accent)', lineHeight: 1.5, marginTop: 8 }}>{error}</p>
+          // whiteSpace: the MP4 failure message is one line per attempted configuration,
+          // and collapsing them into a paragraph destroys the only diagnostic we have.
+          <p
+            style={{
+              fontSize: 10.5,
+              color: 'var(--accent)',
+              lineHeight: 1.5,
+              marginTop: 8,
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {error}
+          </p>
         )}
       </div>
     </Panel>

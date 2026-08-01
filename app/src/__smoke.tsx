@@ -17,7 +17,15 @@ import { primeImage, primeSample, sampleSource } from './engine/imageSample';
 import { beginSourceProbe, sourcePending } from './engine/sourceReady';
 import { clipMs, isVideoRef, videoInfo, type VideoInfo } from './engine/videoSource';
 import { settleSources } from './engine/export/frames';
-import { mp4Supported, MP4_UNSUPPORTED, sceneToMP4 } from './engine/export/mp4';
+import {
+  mp4Supported,
+  MP4_UNSUPPORTED,
+  MP4_ATTEMPTS,
+  describeMp4Failure,
+  mp4FailureMessage,
+  sceneToMP4,
+  type Mp4Failure,
+} from './engine/export/mp4';
 import type { Scene } from './domain/scene';
 
 let pass = 0;
@@ -624,6 +632,59 @@ async function asyncChecks(): Promise<void> {
     ok('sceneToMP4 rejects with the explanation the panel shows, not a TypeError',
       msg === MP4_UNSUPPORTED, msg.slice(0, 60));
   }
+}
+
+// ------------------------------------------------- the MP4 codec ladder
+sec('MP4 codec ladder');
+// The AE/Premiere ordering is a requirement, not a preference, so it is a test rather
+// than a comment: H.264 must be exhausted (hardware AND software) before anything else.
+ok('avc is tried first', MP4_ATTEMPTS[0].codec === 'avc' && MP4_ATTEMPTS[0].hardwareAcceleration === undefined);
+ok('the first two rungs are both avc', MP4_ATTEMPTS[1].codec === 'avc',
+  MP4_ATTEMPTS.map((a) => `${a.codec}/${a.hardwareAcceleration ?? '-'}`).join(' '));
+ok('no (codec, hardwareAcceleration) pair repeats',
+  new Set(MP4_ATTEMPTS.map((a) => `${a.codec}/${a.hardwareAcceleration ?? '-'}`)).size === MP4_ATTEMPTS.length);
+
+sec('MP4 failure reporting (the only Safari diagnostic we get)');
+{
+  // Two rungs: one where the browser rejected a config mediabunny had built, and one
+  // where it threw before a config existed. Both shapes must render.
+  const failures: Mp4Failure[] = [
+    {
+      attempt: { codec: 'avc' },
+      config: {
+        codec: 'avc1.640028',
+        width: 1920,
+        height: 1080,
+        framerate: 25,
+        bitrate: 6112000,
+        bitrateMode: 'variable',
+      },
+      error: new TypeError("The provided value 'quantizer' is not a valid enum value"),
+    },
+    { attempt: { codec: 'hevc', hardwareAcceleration: 'prefer-software' }, config: null, error: 'plain string' },
+  ];
+  const msg = mp4FailureMessage(failures);
+  ok('names every codec tried', msg.includes('avc') && msg.includes('hevc'));
+  ok('carries the exact config the browser saw', msg.includes('avc1.640028') && msg.includes('1920x1080'));
+  ok('carries the rate control (the thing that broke Safari)', msg.includes('variable') && msg.includes('6112 kbps'));
+  // error.name is what distinguishes a rejected IDL member from an unsupported codec
+  // from a dead encoder — three different bugs that otherwise read identically.
+  ok('carries error.name, not just the message', msg.includes('TypeError:'));
+  ok('survives a non-Error throw', msg.includes('plain string'));
+  ok('reports a rung that threw before a config existed', msg.includes('no config built'));
+  ok('offers the escape hatch', msg.includes('PNG sequence'));
+  // The classic way a diagnostic becomes useless.
+  ok('contains no [object Object] and no undefined', !msg.includes('[object Object]') && !msg.includes('undefined'),
+    msg.split('\n')[1]?.slice(0, 90));
+  ok('one line per attempted configuration', mp4FailureMessage(failures).split('\n').length === 4,
+    `${msg.split('\n').length} lines`);
+  // A config with no framerate/bitrate is the shape a very early rejection produces.
+  ok('describeMp4Failure omits absent fields rather than printing undefined',
+    !describeMp4Failure({
+      attempt: { codec: 'vp9' },
+      config: { codec: 'vp09.00.10.08', width: 640, height: 480 },
+      error: new Error('x'),
+    }).includes('undefined'));
 }
 
 void asyncChecks().then(() => {

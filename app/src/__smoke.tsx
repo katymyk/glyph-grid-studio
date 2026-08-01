@@ -14,9 +14,16 @@ import { sceneToSVG } from './engine/export/svg';
 import { sceneToJSON } from './engine/export/json';
 import { konst } from './domain/params';
 import { primeImage, primeSample, sampleSource } from './engine/imageSample';
-import { beginSourceProbe, sourcePending } from './engine/sourceReady';
-import { clipMs, isVideoRef, videoInfo, type VideoInfo } from './engine/videoSource';
-import { settleSources } from './engine/export/frames';
+import { beginSourceProbe, fidelity, sourcePending } from './engine/sourceReady';
+import {
+  clipMs,
+  isVideoRef,
+  resyncThresholdMs,
+  shouldResync,
+  videoInfo,
+  type VideoInfo,
+} from './engine/videoSource';
+import { paintSettled, settleSources } from './engine/export/frames';
 import { gifButtonLabel, gifSize, gifWorkers } from './engine/export/gif';
 import { frameAt, frameCount, timeOfFrame } from './domain/timeline';
 import {
@@ -210,10 +217,22 @@ ok('videoInfo on an unknown ref is null', videoInfo('video:404') === null);
 sec('clip timing: frame index -> position in the clip');
 {
   const clip: VideoInfo = { ref: 'video:1', name: 'c.mp4', width: 640, height: 360, duration: 3 };
-  ok('frame 0 is the start', clipMs(clip, 0, 25) === 0);
-  ok('frame 25 @25fps is one second in', clipMs(clip, 25, 25) === 1000);
-  ok('the same second is the same position at another frame rate',
-    clipMs(clip, 30, 30) === clipMs(clip, 25, 25));
+  // Aimed at the CENTRE of the frame's interval, not its leading edge — seeking to the
+  // boundary lands on the previous clip frame once rounding bites, which is what made an
+  // export repeat frames. At 25fps half a frame is 20ms.
+  ok('frame 0 aims half a frame in, not at 0', clipMs(clip, 0, 25) === 20);
+  ok('frame 25 @25fps is one second in, plus the half frame', clipMs(clip, 25, 25) === 1020);
+  ok('consecutive frames are always distinct positions', (() => {
+    for (const fps of [8, 12, 24, 25, 30, 60]) {
+      const seen = new Set<number>();
+      for (let f = 0; f < Math.floor(2.9 * fps); f++) seen.add(clipMs(clip, f, fps));
+      if (seen.size !== Math.floor(2.9 * fps)) return false;
+    }
+    return true;
+  })());
+  ok('the offset is half a frame at every rate',
+    clipMs(clip, 0, 12) === 42 && clipMs(clip, 0, 60) === 8,
+    `${clipMs(clip, 0, 12)}ms @12, ${clipMs(clip, 0, 60)}ms @60`);
   // A short clip on a long timeline holds rather than blanking, and every held frame
   // resolves to ONE position — so the tail of a 10s comp costs one decode, not 175.
   const tail = clipMs(clip, 250, 25);
@@ -223,6 +242,22 @@ sec('clip timing: frame index -> position in the clip');
   ok('a negative offset clamps to the start', clipMs(clip, -50, 25) === 0);
   ok('an unknown-length clip pins to the start rather than guessing',
     clipMs({ ...clip, duration: 0 }, 90, 25) === 0);
+}
+
+sec('live-playback resync policy');
+{
+  // Steady state: the frame on screen is inherently up to one scene frame plus one clip
+  // frame behind. Chasing that would mean seeking every frame, which is the stall the live
+  // regime exists to avoid.
+  ok('a small offset is tolerated', !shouldResync(1000, 1080, 25));
+  ok('a big offset resyncs', shouldResync(1000, 1600, 25));
+  // The loop wrapping is the common case: the playhead returns to 0 while the clip is at
+  // the far end, and that must be one seek rather than a slow crawl back.
+  ok('the timeline wrapping forces a resync', shouldResync(0, 2900, 25));
+  ok('a held tail (want === media) never resyncs', !shouldResync(2996, 2996, 25));
+  ok('the tolerance grows as fps falls', resyncThresholdMs(6) > resyncThresholdMs(25));
+  ok('but never below a quarter second', resyncThresholdMs(60) === 250 && resyncThresholdMs(120) === 250);
+  ok('fps 0 does not divide by zero', Number.isFinite(resyncThresholdMs(0)));
 }
 
 sec('the Clip panel appears only for a video source');
@@ -620,6 +655,39 @@ async function asyncChecks(): Promise<void> {
     // budget: an export of a scene whose clip is gone should finish, not hang.
     ok('a scene whose clip is gone still settles (no hang)',
       await settleSources(useStudio.getState().scene, 0));
+    st.reset();
+  }
+
+  sec('an export can never take the live regime\'s substitute');
+  {
+    const st = useStudio.getState();
+    st.reset();
+    // THE assertion for the two-regime split, and it needs no browser: if fidelity is not
+    // latched back to 'exact', a video frame that was merely "close enough" for playback
+    // gets written into a file, with no pending mark to catch it.
+    st.play();
+    ok('play() puts sources into the live regime', fidelity() === 'live');
+    await settleSources(useStudio.getState().scene, 0);
+    ok('settleSources latches back to exact', fidelity() === 'exact');
+
+    st.play();
+    const ctx = stubCtx();
+    await paintSettled(ctx, useStudio.getState().scene, 0);
+    ok('paintSettled latches back to exact too', fidelity() === 'exact');
+
+    // And it must stay latched: the SVG/JSON exporters resolve the scene AFTER
+    // settleSources returns, so a bracket that restored would hand them a substitute.
+    st.play();
+    await settleSources(useStudio.getState().scene, 0);
+    sceneToSVG(useStudio.getState().scene, 0);
+    ok('...and stays exact while the caller serializes', fidelity() === 'exact');
+
+    st.pause();
+    ok('pause() is exact', fidelity() === 'exact');
+    st.play();
+    st.stepFrame(1);
+    ok('stepping a frame is exact (a stepped frame must be the real one)', fidelity() === 'exact');
+    ok('stepping also stopped playback', useStudio.getState().playing === false);
     st.reset();
   }
 

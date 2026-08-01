@@ -13,7 +13,7 @@
 import type { Scene } from '../../domain/scene';
 import { paintScene } from '../paint';
 import { resolveScene } from '../placements';
-import { beginSourceProbe, sourcePending, waitForSourceReady } from '../sourceReady';
+import { beginSourceProbe, setFidelity, sourcePending, waitForSourceReady } from '../sourceReady';
 
 /**
  * Cap on wait-and-retry rounds per frame. Reached only when sources keep arriving
@@ -38,6 +38,10 @@ export async function paintSettled(
   scene: Scene,
   t: number,
 ): Promise<{ settled: Settled; drawn: number }> {
+  // Latched, not bracketed. An export writes each frame once, so it can never take the
+  // live regime's substitute — and restoring the previous regime afterwards would hand the
+  // NEXT frame one, since nothing here knows whether the caller is mid-export.
+  setFidelity('exact');
   let drawn = 0;
   for (let i = 0; i < MAX_ROUNDS; i++) {
     beginSourceProbe();
@@ -56,6 +60,10 @@ export async function paintSettled(
  * extra scene resolve, which is fine for a single frame.
  */
 export async function settleSources(scene: Scene, t: number): Promise<Settled> {
+  // Latched for the same reason, and it matters more here: the SVG/JSON exporters resolve
+  // the scene *after* this returns, so a bracket that restored would hand them a
+  // substituted frame from outside this function.
+  setFidelity('exact');
   for (let i = 0; i < MAX_ROUNDS; i++) {
     beginSourceProbe();
     resolveScene(scene, t);

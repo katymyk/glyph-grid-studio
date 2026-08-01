@@ -430,7 +430,61 @@ difference between the two kinds is resolved below that call.
   so a halftone of a PNG and a halftone of frame 40 of an MP4 are screened identically.
   Two copies of that maths is exactly the drift §6 exists to prevent.
 
-### 14a. Not-ready is a normal outcome
+### 14a. Two regimes: exact, and live
+
+Seeking a video costs 20–100ms, so a seek per frame cannot feed playback — that is a
+physical limit, not a tuning problem. So sampling has two regimes, and `sourceReady.ts`
+holds the flag because the exporters must not learn that video exists:
+
+- **`'exact'`** — paused, scrubbing, stepping, and every export. The frame that was asked
+  for, or nothing: seek, decode, cache by clip position.
+- **`'live'`** — playback only. The clip is *played* (muted) and whatever has been presented
+  is sampled, so there are no seeks at all. `requestVideoFrameCallback` is the only signal
+  that a frame has been presented; where it is missing (Firefox) the clip clock stands in.
+  The pixels are grabbed lazily in `sampleVideoFrame`, never in the presentation callback,
+  which fires at the clip's rate and would do five times the work needed for a 12fps preview.
+
+The transport is the only writer of the flag, and `export/frames.ts` **latches** it back to
+`'exact'` — latched rather than bracketed, because the SVG/JSON path resolves the scene
+*after* `settleSources` returns, and restoring would hand it a substitute.
+
+Three properties make the split safe rather than a hedge:
+
+- **Live captures go to `held`, never to `frames`.** `frames` is keyed by the clip position a
+  scene frame *asked for*; a live capture is at `el.currentTime`, which is a different
+  position. Writing it under that key would poison the exact cache permanently — invisible
+  until someone compares an export against the canvas.
+- **A seek that outlives its regime discards its result.** `serve` re-checks a generation
+  counter after its `await`, because playback starting mid-seek moves the element and the
+  sample would otherwise be cached under the wrong frame's key.
+- **Leaving live forces a repaint.** Pausing changes no scene state, and a loop that wraps
+  to exactly frame 0 makes even a Home press a no-op — so without this the approximate frame
+  sits on screen and the artwork you stopped on is not the artwork you export. Found by a
+  test, not by reading.
+
+Sync needs no PLL: after §12 the playhead is wall-clock anchored and so is a playing element,
+so they cannot drift from each other even when paints are skipped. One threshold check per
+sample (`shouldResync`) covers the four cases that remain — the timeline wrapping, a
+keyframed `srcTime` jump-cut, a decoder stall, and resuming somewhere else — and the
+correction is fire-and-forget, never `seekTo`, which would block the loop it is fixing.
+A resync is given time to land before drift is judged again; without that, one legitimate
+correction looks like a storm.
+
+Both failure paths degrade to seeking rather than freezing, and say so in the console:
+a refused `play()` (a detached element is the least-tested path here) and a resync storm,
+which is what two layers on one clip at different `srcTime` produce — they ask one element
+to be in two places at once.
+
+`clipMs` aims at the **centre** of the frame's interval, not its leading edge. Seeking to the
+boundary is what made an export repeat frames: at 12fps frame 1 sits at 83.333ms, and a
+millisecond-rounded 83ms is just *before* it, so the decoder presents frame 0 again.
+
+The better answer, for later: WebCodecs `VideoDecoder` plus demuxing (mediabunny already does
+both and is already a dependency) would give exact frames at speed and remove the split
+entirely. Rejected for now — it cannot decode everything an `HTMLVideoElement` can, and it
+moves a 10MB chunk onto the critical path for any video source.
+
+### 14b. Not-ready is a normal outcome
 
 Both kinds can fail to answer immediately — an image may be decoding, a video frame may be
 seeking — and the difference between the live canvas and an export is what `sourceReady.ts`
@@ -449,7 +503,7 @@ exists for.
 - Both waits are bounded. `waitForSourceReady` times out and `MAX_ROUNDS` caps the retries,
   so a corrupt clip or a dropped seek costs a frame instead of hanging the export.
 
-### 14b. Seeking, and the two caches
+### 14c. Seeking, and the two caches
 
 - **Seeks are serial and coalesced.** One `HTMLVideoElement` services one seek at a time,
   so requests queue — bounded, and LIFO, because during a scrub the frame under the

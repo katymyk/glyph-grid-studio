@@ -19,7 +19,7 @@ import { frameAt, frameCount, timeOfFrame } from '../domain/timeline';
 import { defaultScene } from '../domain/defaults';
 import type { Layer, LayerMorph, MorphStyle, Scene, SpawnZone } from '../domain/scene';
 import { getMode } from '../engine/modes';
-import { onSourceReady } from '../engine/sourceReady';
+import { onSourceReady, setFidelity } from '../engine/sourceReady';
 import { clearVideoFrames } from '../engine/videoSource';
 import { parseGlyphs } from '../lib/glyphs';
 
@@ -601,16 +601,28 @@ export const useStudio = create<StudioState>((set, get) => ({
       return s.playhead === playhead ? {} : { playhead };
     }),
 
-  stepFrame: (delta) =>
+  stepFrame: (delta) => {
+    setFidelity('exact'); // stepping is navigation, and a stepped frame must be the real one
     set((s) => {
       const f = frameAt(s.scene, s.playhead) + delta;
       // Clamp in frames, not seconds, so a step always lands on the grid.
       const clamped = Math.max(0, Math.min(frameCount(s.scene) - 1, f));
       return { playing: false, playhead: timeOfFrame(s.scene, clamped) };
-    }),
+    });
+  },
 
-  play: () => set({ playing: true }),
-  pause: () => set({ playing: false }),
+  // The transport is the ONLY writer of the source-fidelity regime: playing means a video
+  // may be sampled from native playback instead of a seek per frame, paused means every
+  // paint gets the exact frame it asked for. Routing all three through here keeps that a
+  // single fact rather than three places that must agree.
+  play: () => {
+    setFidelity('live');
+    set({ playing: true });
+  },
+  pause: () => {
+    setFidelity('exact');
+    set({ playing: false });
+  },
 
   undo: () => {
     flushHistory();

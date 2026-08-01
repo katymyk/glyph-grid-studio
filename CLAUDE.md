@@ -111,7 +111,24 @@ checks that matter, because each one has a plausible silent failure:
    decisive one: a broken `paintSettled` gives a zip with the right frame *count* and the
    same picture in every file.
 3. Export MP4 and check the frame count is `fps × duration` and that it opens in a player.
+   In Safari specifically — that path has no automated coverage at all (see below).
 4. Scrub fast, then let go — the canvas should lag and catch up, never blank or flicker.
+5. **Press play, then pause.** The frame must become *exact* on pause with no further
+   interaction: step away and back and compare. During playback the canvas shows the
+   presented video frame, which is close but not the frame that was asked for, and nothing
+   in the scene changes when you pause — so if the repaint on leaving the live regime is
+   ever lost, the artwork you stopped on is not the artwork you export.
+6. Play at 6 / 12 / 25 fps and confirm the picture visibly *steps* at that rate and the frame
+   readout increments by exactly one. Change fps mid-playback: the playhead must continue from
+   the same second, not jump.
+7. Two layers on one clip at different `srcTime` — expect a console warning and a fall back
+   to seeking (slow but stable), not a stall.
+8. Firefox, which has no `requestVideoFrameCallback` — playback must still advance via the
+   clip-clock fallback.
+
+Neither Safari nor Firefox can be automated here, so both MP4 negotiation and the rVFC
+fallback are written to be correct by construction and to log why they degraded. If a video
+or MP4 report comes in, ask for the console output first — it names the reason.
 
 ## Deployment
 

@@ -21,6 +21,41 @@
  * DOM-free on purpose — it is pure bookkeeping.
  */
 
+/**
+ * How exact a render needs its source data to be.
+ *
+ * `'exact'` — the frame that was asked for, or nothing. Every export, and every paint of a
+ * paused canvas.
+ * `'live'` — whatever is on screen right now is good enough. Playback only, where a video
+ * can be *played* instead of seeked; seeking per frame costs 20–100ms and cannot keep up.
+ *
+ * It lives here rather than in `videoSource.ts` for the same reason the probe does: this is
+ * the module through which "I could not deliver" and "I must have the real thing" talk to
+ * each other, and the exporters must not learn that video exists. The probe answers *was
+ * this render exact?* after the fact; this declares *must it be?* beforehand.
+ */
+export type Fidelity = 'exact' | 'live';
+
+let current: Fidelity = 'exact';
+const fidelityListeners = new Set<(f: Fidelity) => void>();
+
+export function fidelity(): Fidelity {
+  return current;
+}
+
+/** Set the regime. Listeners run synchronously, so a caller that latches `'exact'` can
+    rely on live playback having stopped by the time this returns. */
+export function setFidelity(f: Fidelity): void {
+  if (current === f) return;
+  current = f;
+  for (const cb of [...fidelityListeners]) cb(f);
+}
+
+export function onFidelityChange(cb: (f: Fidelity) => void): () => void {
+  fidelityListeners.add(cb);
+  return () => fidelityListeners.delete(cb);
+}
+
 const listeners = new Set<() => void>();
 
 /** Register a callback fired when a lazily-decoded source becomes ready (to repaint).

@@ -22,7 +22,7 @@
  * preview/export agreement needs. Byte-identical output across *browsers* is not on
  * offer for video and never was — decoders differ.
  */
-import { markSourcePending, notifySourceReady } from './sourceReady';
+import { fidelity, markSourcePending, notifySourceReady, onFidelityChange } from './sourceReady';
 import { sampleBytes, sampleDrawable, type Sample } from './sampleGrid';
 
 const PREFIX = 'video:';
@@ -45,6 +45,32 @@ interface Wanted {
   fps: number;
 }
 
+/**
+ * State for one clip while the transport is playing.
+ *
+ * `mark` changes when a new frame has been *presented*, which is the only safe moment to
+ * read pixels. The pixels are then grabbed lazily, once per grid, in `sampleVideoFrame` —
+ * NOT in the presentation callback, which fires at the clip's rate (30–60Hz) and would do
+ * five times the work needed to feed a 12fps preview.
+ */
+interface LiveState {
+  mark: number;
+  /** Per grid: the mark whose pixels are already in `held`. */
+  sampledMark: Map<string, number>;
+  /** Clip position of the presented frame, ms. */
+  mediaMs: number;
+  /** rVFC handle; 0 when the browser has no rVFC and the fallback clock is in use. */
+  rvfc: number;
+  usesRvfc: boolean;
+  /** Wall-clock times of recent resyncs, for the damper. */
+  resyncs: number[];
+  /** Don't re-check drift before this instant. A seek is asynchronous, so the clip clock
+      keeps reporting the OLD position for a while after one is issued — checking again
+      inside that window fires a second resync for a drift already being corrected, and
+      three of those in a row trip the damper for no reason. */
+  quietUntil: number;
+}
+
 interface Entry {
   info: VideoInfo;
   el: HTMLVideoElement;
@@ -53,6 +79,14 @@ interface Entry {
   pumping: boolean;
   /** The last request served for real (not read-ahead) — the anchor for read-ahead. */
   last: Wanted | null;
+  /** Non-null while this clip is being sampled from native playback. */
+  live: LiveState | null;
+  /** Bumped when the regime changes, so a seek finishing afterwards discards its result
+      instead of caching a frame from the wrong position. */
+  generation: number;
+  /** Live playback proved unusable for this clip (play() refused, or resync storm), so it
+      stays on the seek path for the rest of the session. Slow but correct. */
+  liveDisabled: boolean;
 }
 
 const videos = new Map<string, Entry>();
@@ -100,7 +134,17 @@ export async function registerVideo(file: File): Promise<VideoInfo> {
     // Live/fragmented sources report Infinity; treat that as "unknown length".
     duration: Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0,
   };
-  videos.set(ref, { info, el, url, wanted: [], pumping: false, last: null });
+  videos.set(ref, {
+    info,
+    el,
+    url,
+    wanted: [],
+    pumping: false,
+    last: null,
+    live: null,
+    generation: 0,
+    liveDisabled: false,
+  });
   return info;
 }
 
@@ -162,17 +206,27 @@ export function clearVideoFrames(): void {
 /**
  * Scene frame index → a position inside the clip, in whole milliseconds.
  *
- * Two decisions live here. Past the end the **last frame is held** rather than going
- * blank, so a 3s clip on a 10s timeline freezes instead of disappearing mid-comp. And
- * the result is quantised to 1ms and used as the cache key, so every scene frame that
- * lands on the same clip position — all of the held tail, or any frame at all when the
- * scene runs faster than the clip — shares one decode.
+ * Three decisions live here.
+ *
+ * **The CENTRE of the frame, not its leading edge.** A scene frame covers the clip interval
+ * `[f/fps, (f+1)/fps)`, and seeking to the boundary is what made an export repeat frames:
+ * at 12fps, frame 1 is at 83.333ms, but a millisecond-rounded 83ms sits just *before* it, so
+ * the decoder presents frame 0 again. Aiming half a frame in is both the correct
+ * representative of the interval and immune to that rounding in either direction.
+ *
+ * **Past the end the last frame is held** rather than going blank, so a 3s clip on a 10s
+ * timeline freezes instead of disappearing mid-comp.
+ *
+ * **Quantised to 1ms and used as the cache key**, so every scene frame that lands on the
+ * same clip position — all of the held tail, or any frame at all when the scene runs faster
+ * than the clip — shares one decode.
  *
  * Exported because it is the only part of video sampling that is pure, and therefore the
  * only part the headless check can exercise.
  */
 export function clipMs(info: VideoInfo, frame: number, fps: number): number {
-  const t = frame / (fps || 25);
+  const rate = fps || 25;
+  const t = (frame + 0.5) / rate;
   if (!(info.duration > 0)) return 0;
   // Nudge off the very end: seeking exactly to `duration` can land past the last frame
   // and decode nothing at all.
@@ -200,6 +254,14 @@ export function sampleVideoFrame(
 
   const ms = clipMs(e.info, frame, fps);
   const gk = gridKey(ref, cols, rows);
+
+  // Playing: sample whatever the element is showing. Started lazily here rather than from
+  // the regime listener so a clip no layer is rendering never spins up a decoder.
+  if (fidelity() === 'live' && !e.liveDisabled) {
+    if (!e.live) startLive(e);
+    if (e.live) return liveSample(e, e.live, gk, cols, rows, ms, fps);
+  }
+
   const hit = cacheGet(frameKey(ref, cols, rows, ms));
   if (hit) {
     held.set(gk, hit);
@@ -210,6 +272,179 @@ export function sampleVideoFrame(
   request(e, { cols, rows, frame, fps });
   return held.get(gk) ?? null;
 }
+
+// ------------------------------------------------------------------ live playback
+
+/**
+ * How far the clip may drift from the playhead before a seek is worth it.
+ *
+ * Scaled by the scene frame rate because the steady-state offset already is: the frame on
+ * screen is up to one scene frame plus one clip frame behind the position being asked for,
+ * and chasing that would mean seeking every frame — the stall this whole regime exists to
+ * avoid. Exported (with `shouldResync`) because it is the one part of live playback that is
+ * pure, and therefore the only part the headless check can exercise.
+ */
+export function resyncThresholdMs(fps: number): number {
+  return Math.max(250, 2500 / Math.max(1, fps));
+}
+
+export function shouldResync(wantMs: number, mediaMs: number, fps: number): boolean {
+  return Math.abs(wantMs - mediaMs) > resyncThresholdMs(fps);
+}
+
+/** More than this many resyncs inside the window means live playback is not working for
+    this clip — see the damper in `resync`. */
+const RESYNC_WINDOW_MS = 1500;
+const RESYNC_LIMIT = 3;
+/** How long a resync is given to land before drift is judged again. Generous: a seek plus
+    a presented frame is tens of milliseconds at best, and being early here is what makes a
+    single legitimate correction look like a storm. */
+const RESYNC_SETTLE_MS = 400;
+
+type FrameMeta = { mediaTime: number };
+type WithRVFC = HTMLVideoElement & {
+  requestVideoFrameCallback?: (cb: (now: number, meta: FrameMeta) => void) => number;
+  cancelVideoFrameCallback?: (handle: number) => void;
+};
+
+function startLive(e: Entry): void {
+  if (e.live || e.liveDisabled) return;
+  // Abandon queued seeks and invalidate any in flight: the element is about to move.
+  e.wanted.length = 0;
+  e.generation++;
+  const L: LiveState = {
+    mark: 0,
+    sampledMark: new Map(),
+    mediaMs: e.el.currentTime * 1000,
+    rvfc: 0,
+    usesRvfc: false,
+    resyncs: [],
+    quietUntil: 0,
+  };
+  e.live = L;
+
+  const rvfc = (e.el as WithRVFC).requestVideoFrameCallback;
+  if (typeof rvfc === 'function') {
+    L.usesRvfc = true;
+    const step = (_now: number, meta: FrameMeta) => {
+      if (e.live !== L) return; // regime changed; stop rescheduling
+      L.mark++;
+      L.mediaMs = meta.mediaTime * 1000;
+      L.rvfc = rvfc.call(e.el, step);
+    };
+    L.rvfc = rvfc.call(e.el, step);
+  }
+  // Muted playback of a detached element is normally allowed, but policies vary. If it is
+  // refused we must fall back rather than freeze on one held frame for the whole playback.
+  void e.el.play().catch((err: unknown) => disableLive(e, `play() was refused: ${String(err)}`));
+}
+
+/**
+ * Fall back to seeking for the rest of the session.
+ *
+ * Logged rather than silent: "video is as slow as it used to be" is a support question, and
+ * the two reasons (a refused `play()` vs a clip being pulled in two directions) need
+ * completely different answers.
+ */
+function disableLive(e: Entry, why: string): void {
+  if (e.liveDisabled) return;
+  e.liveDisabled = true;
+  console.warn(`video ${e.info.name}: smooth playback unavailable, falling back to seeking — ${why}`);
+  stopLive(e);
+}
+
+function stopLive(e: Entry): void {
+  const L = e.live;
+  if (!L) return;
+  e.live = null; // makes the rVFC chain stop rescheduling itself
+  const cancel = (e.el as WithRVFC).cancelVideoFrameCallback;
+  if (L.rvfc && typeof cancel === 'function') cancel.call(e.el, L.rvfc);
+  e.generation++;
+  e.el.pause();
+  // `held` is deliberately NOT cleared: it is the substitute the next paused paint shows
+  // while the exact seek runs, and blanking it brings back the scrub flicker.
+  //
+  // But the canvas MUST be told to repaint, and nothing else will tell it. Pausing changes
+  // no scene state, and a loop that wraps to exactly frame 0 means even a Home press is a
+  // no-op — so the approximate frame would sit on screen indefinitely, and the artwork you
+  // stopped on would not be the artwork you export. This is precisely "the best available
+  // pixels changed", which is what this notification means.
+  notifySourceReady();
+}
+
+/** rVFC is the only signal that a frame has been *presented*; without it (Firefox) the
+    clip clock is the best available stand-in — a changed currentTime means a new frame. */
+function liveMark(e: Entry, L: LiveState): number {
+  return L.usesRvfc ? L.mark : Math.round(e.el.currentTime * 1000);
+}
+
+function liveMediaMs(e: Entry, L: LiveState): number {
+  return L.usesRvfc ? L.mediaMs : e.el.currentTime * 1000;
+}
+
+function liveSample(
+  e: Entry,
+  L: LiveState,
+  gk: string,
+  cols: number,
+  rows: number,
+  wantMs: number,
+  fps: number,
+): Sample | null {
+  // Don't judge drift while a correction is still landing, and never while the element is
+  // mid-seek: the clip clock reports the old position until the seek completes, so a second
+  // look inside that window sees the same drift and fires a redundant resync.
+  if (performance.now() >= L.quietUntil && !e.el.seeking && shouldResync(wantMs, liveMediaMs(e, L), fps)) {
+    resync(e, L, wantMs);
+    if (!e.live) return held.get(gk) ?? null; // the damper gave up mid-call
+  }
+  const mark = liveMark(e, L);
+  // The `!held.has(gk)` clause covers a cold start and a cleared cache; two layers at
+  // different grids each need their own downscale of the same presented frame.
+  if ((L.sampledMark.get(gk) !== mark || !held.has(gk)) && e.el.videoWidth > 0) {
+    held.set(gk, sampleDrawable(e.el, e.el.videoWidth, e.el.videoHeight, cols, rows));
+    L.sampledMark.set(gk, mark);
+  }
+  // No markSourcePending() and no notifySourceReady(): during playback this IS the frame,
+  // and the loop already repaints once per scene frame. An export can never reach here —
+  // export/frames.ts latches fidelity to 'exact' first.
+  return held.get(gk) ?? null;
+}
+
+/**
+ * Nudge the clip back onto the playhead.
+ *
+ * Fire-and-forget rather than `seekTo()`: that awaits `seeked` plus a presentation callback,
+ * which would block the very loop this is meant to keep moving. One threshold check covers
+ * four cases that would otherwise each need code — the timeline looping, a keyframed
+ * `srcTime` jump-cut, a decoder stall, and resuming playback somewhere else.
+ */
+function resync(e: Entry, L: LiveState, wantMs: number): void {
+  const now = performance.now();
+  L.resyncs = L.resyncs.filter((t) => now - t < RESYNC_WINDOW_MS);
+  L.resyncs.push(now);
+  if (L.resyncs.length > RESYNC_LIMIT) {
+    // Two layers on one clip at different `srcTime` ask this element to be in two places at
+    // once, and a decoder that cannot keep up looks identical. Seeking every frame is the
+    // stall this regime exists to avoid, so give up on live for this clip: slower, but
+    // correct and stable.
+    disableLive(e, `${L.resyncs.length} resyncs in ${RESYNC_WINDOW_MS}ms`);
+    return;
+  }
+  L.quietUntil = now + RESYNC_SETTLE_MS;
+  e.el.currentTime = wantMs / 1000;
+  // A clip shorter than the timeline reaches `ended` and needs a fresh play() after the
+  // loop wraps.
+  if (e.el.paused) {
+    void e.el.play().catch((err: unknown) => disableLive(e, `play() was refused: ${String(err)}`));
+  }
+}
+
+// Pausing, stepping and every export latch back to 'exact'; that must stop playback
+// immediately, so the exact path's first seek starts from a known position.
+onFidelityChange((f) => {
+  if (f === 'exact') for (const e of videos.values()) stopLive(e);
+});
 
 /** Queue a frame request, newest-wins. */
 const MAX_WANTED = 6;
@@ -248,6 +483,7 @@ async function pump(e: Entry): Promise<void> {
   e.pumping = true;
   try {
     for (;;) {
+      if (e.live) return; // playback took over; queued seeks are worthless now
       // LIFO: the newest ask is the frame the user is looking at.
       const w = e.wanted.pop();
       if (w) {
@@ -269,8 +505,14 @@ async function serve(e: Entry, w: Wanted, notify: boolean): Promise<void> {
   const ms = clipMs(e.info, w.frame, w.fps);
   const k = frameKey(e.info.ref, w.cols, w.rows, ms);
   if (frames.has(k)) return;
+  const gen = e.generation;
   try {
     await seekTo(e.el, ms / 1000);
+    // Playback may have started during the seek, which moves the element off this position.
+    // Sampling now would cache a LATER frame under this frame's key and poison the exact
+    // cache for the rest of the session — invisible until someone compares an export
+    // against the canvas.
+    if (e.generation !== gen) return;
     if (!(e.el.videoWidth > 0)) return;
     cachePut(k, sampleDrawable(e.el, e.el.videoWidth, e.el.videoHeight, w.cols, w.rows));
   } catch {
@@ -287,10 +529,6 @@ async function serve(e: Entry, w: Wanted, notify: boolean): Promise<void> {
 const SEEK_TIMEOUT_MS = 4000;
 /** After 'seeked', how long to wait for the frame to actually be presented. */
 const PRESENT_TIMEOUT_MS = 150;
-
-type WithRVFC = HTMLVideoElement & {
-  requestVideoFrameCallback?: (cb: () => void) => number;
-};
 
 /**
  * Seek and resolve once the frame is safe to `drawImage`.

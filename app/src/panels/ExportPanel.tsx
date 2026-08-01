@@ -46,6 +46,10 @@ export function ExportPanel() {
 
   /** Wrap an export: one progress slot, and a failure the user can actually read. */
   const run = async (tag: string, job: (onProgress: (p: number) => void) => Promise<void>) => {
+    // Stop the transport first. The engine already refuses to write a substituted frame
+    // (frames.ts latches 'exact'), so this is manners rather than the guarantee — but
+    // without it the playback loop keeps fighting the export for the decoder.
+    useStudio.getState().pause();
     setBusy(`${tag}:0`);
     setError(null);
     setNote(null);

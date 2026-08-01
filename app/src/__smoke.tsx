@@ -26,6 +26,8 @@ import {
 import { paintSettled, settleSources } from './engine/export/frames';
 import { gifButtonLabel, gifSize, gifWorkers } from './engine/export/gif';
 import { frameAt, frameCount, timeOfFrame } from './domain/timeline';
+import { makeProject, missingClips, parseProject } from './domain/project';
+import { currentDoc } from './state/persist';
 import {
   mp4Supported,
   MP4_UNSUPPORTED,
@@ -453,14 +455,15 @@ sec('store behaviour');
   st.setMorphMode(lid, null);
 
   const before = JSON.stringify(useStudio.getState().scene.layers[0].params.image);
+  const beforeAll = JSON.stringify(useStudio.getState().scene.layers[0].params);
   st.surprise();
-  ok('surprise changes halftone params', (() => {
-    const p = useStudio.getState().scene.layers[0].params;
-    const d = getMode('halftone').defaultParams();
-    return JSON.stringify(p.cell) !== JSON.stringify(d.cell) ||
-      JSON.stringify(p.angle) !== JSON.stringify(d.angle) ||
-      JSON.stringify(p.algo) !== JSON.stringify(d.algo);
-  })());
+  // Compared against the params it replaced, NOT against the mode defaults. Checking
+  // three specific keys against defaults fails roughly one run in 150 on its own:
+  // `algo` re-picks 'halftone' half the time and `cell`/`angle` can legitimately land on
+  // their default values. Surprise writes ~15 params, so "nothing at all moved" is the
+  // real failure and is vanishingly unlikely by chance.
+  ok('surprise changes halftone params',
+    JSON.stringify(useStudio.getState().scene.layers[0].params) !== beforeAll);
   ok('surprise leaves the image alone',
     JSON.stringify(useStudio.getState().scene.layers[0].params.image) === before);
 
@@ -831,6 +834,130 @@ sec('MP4 failure reporting (the only Safari diagnostic we get)');
       config: { codec: 'vp09.00.10.08', width: 640, height: 480 },
       error: new Error('x'),
     }).includes('undefined'));
+}
+
+// ------------------------------------------------------ saving and restoring
+//
+// The store/tree half of "don't lose work". `domain/project.ts` is checked on its own in
+// check:math; this is the part only a rendered tree can answer — that a restore actually
+// reaches the sidebar, and that a missing clip is named rather than silently absent.
+// IndexedDB itself is browser-only and is not covered anywhere.
+sec('project: the panel is wired in');
+{
+  const st = useStudio.getState();
+  st.reset();
+  const html = render();
+  ok('the sidebar has a Project panel', html.includes('Project'));
+  ok('a clean session shows no restore notice', !html.includes('Picked up where you left off'));
+  ok('...and no re-link alert', !html.includes('re-linking'));
+  ok('...and no storage warning (storage is simply absent under SSR, not broken)',
+    !html.includes('Not saving'));
+}
+
+sec('project: opening a document replaces the session cleanly');
+{
+  const st = useStudio.getState();
+  st.reset();
+  const lid = useStudio.getState().scene.layers[0].id;
+  st.setConstParam(lid, 'cols', 33);
+  st.setPlayhead(1.5);
+  ok('there is history to lose', useStudio.getState().past.length > 0);
+
+  const opened: Scene = { ...useStudio.getState().scene, width: 800, height: 600 };
+  st.loadProject(makeProject('Opened comp', opened, () => null, 0));
+
+  const s2 = useStudio.getState();
+  ok('the scene is adopted', s2.scene.width === 800);
+  ok('the name comes with it', s2.projectName === 'Opened comp');
+  // One undo must never jump between two unrelated documents.
+  ok('history is cleared', s2.past.length === 0 && s2.future.length === 0);
+  ok('the playhead goes home', s2.playhead === 0);
+  ok('nothing is left selected', s2.selection === null);
+  ok('opening is not itself a restore', s2.restored === false);
+}
+
+sec('project: a restore announces itself');
+{
+  const st = useStudio.getState();
+  st.reset();
+  st.loadProject(makeProject('Yesterday', useStudio.getState().scene, () => null, 0), {
+    id: 'p-1',
+    restored: true,
+  });
+  const html = render();
+  ok('the notice is shown', html.includes('Picked up where you left off'));
+  ok('...with a way out that keeps the old one', html.includes('Start fresh'));
+  ok('the id from storage is adopted, not replaced',
+    useStudio.getState().projectId === 'p-1',
+    useStudio.getState().projectId);
+
+  useStudio.getState().dismissRestored();
+  ok('dismissing hides it', !render().includes('Picked up where you left off'));
+}
+
+sec('project: a clip that cannot come back is named, not hidden');
+{
+  const st = useStudio.getState();
+  st.reset();
+  const lid = useStudio.getState().scene.layers[0].id;
+  st.setLayerMode(lid, 'halftone');
+  st.setConstParam(lid, 'image', 'video:2');
+
+  const info: VideoInfo = { ref: 'video:2', name: 'beach-walk.mp4', width: 1920, height: 1080, duration: 12.4 };
+  const doc = makeProject('Clip comp', useStudio.getState().scene, () => info, 0);
+  st.loadProject(doc, { restored: true });
+
+  const html = render();
+  ok('the alert appears', html.includes('needs re-linking'));
+  // THE regression. Rebuilding the manifest from live state instead of carrying the saved
+  // one gives "Unknown clip" — which is exactly the fact the person needs to act.
+  ok('it names the actual file', html.includes('beach-walk.mp4'));
+  ok('...and describes it well enough to find', html.includes('1920×1080') && html.includes('12.4s'));
+  // No apostrophe in the needle: React escapes it to &#x27; and the match would never fire.
+  ok('it explains why, rather than looking like a bug',
+    html.includes('keep a video file after a reload'));
+  ok('it offers the fix', html.includes('Re-link'));
+
+  // Re-linking mints a NEW id, so it is a scene rewrite. (registerVideo needs a browser;
+  // this is the store half of it.)
+  useStudio.getState().remapClip('video:2', 'video:77');
+  const after = useStudio.getState();
+  ok('the scene now points at the new clip',
+    JSON.stringify(after.scene).includes('video:77') && !JSON.stringify(after.scene).includes('video:2'));
+  ok('a re-link is undoable', after.past.length > 0);
+  ok('the alert clears once nothing is missing',
+    missingClips(after.scene, after.clips, (r) => r === 'video:77').length === 0);
+  ok('re-linking a ref nothing points at is a no-op', (() => {
+    const before = useStudio.getState().scene;
+    useStudio.getState().remapClip('video:404', 'video:1');
+    return useStudio.getState().scene === before;
+  })());
+}
+
+sec('project: what gets written is what can be reopened');
+{
+  const st = useStudio.getState();
+  st.reset();
+  const lid = useStudio.getState().scene.layers[0].id;
+  st.setLayerMode(lid, 'halftone');
+  st.setConstParam(lid, 'image', 'video:2');
+  st.setProjectName('Round trip');
+
+  const doc = currentDoc();
+  const back = parseProject(JSON.stringify(doc));
+  ok('the live document parses back', back.name === 'Round trip');
+  ok('the scene survives byte-for-byte', JSON.stringify(back.scene) === JSON.stringify(doc.scene));
+  // The clip is not loaded (no browser), so this is the save → reload → save cycle: the
+  // reference has to survive a save made while the file is missing.
+  ok('the clip reference survives a save made without the clip',
+    back.clips.length === 1 && back.clips[0].ref === 'video:2');
+
+  st.newProject();
+  const fresh = useStudio.getState();
+  ok('a new project resets the name', fresh.projectName === 'Untitled');
+  ok('...and mints a new id, so it cannot overwrite the last one', fresh.projectId !== doc.name);
+  ok('...and forgets the old clip manifest', fresh.clips.length === 0);
+  st.reset();
 }
 
 void asyncChecks().then(() => {

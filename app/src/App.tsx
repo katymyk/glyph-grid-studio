@@ -3,6 +3,7 @@ import { Stage } from './canvas/Stage';
 import { Timeline } from './panels/Timeline';
 import { panelsForMode } from './panels/schema';
 import { ActionsBar } from './panels/ActionsBar';
+import { ProjectAlerts, ProjectPanel } from './panels/ProjectPanel';
 import { ModePanel } from './panels/ModePanel';
 import { SourcePanel } from './panels/SourcePanel';
 import { SpawnPanel } from './panels/SpawnPanel';
@@ -82,6 +83,11 @@ export function App() {
           </p>
         </header>
         <div style={{ overflowY: 'auto', flex: 1 }}>
+          {/* Above everything: a restore, a clip that needs re-linking, or storage that
+              isn't working are all things to act on, and a collapsed panel is not a
+              notification. Renders nothing when there is nothing to say. */}
+          <ProjectAlerts />
+          <ProjectPanel />
           <ActionsBar />
           <LayersPanel />
           <ModePanel />

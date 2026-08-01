@@ -579,3 +579,72 @@ weight: every rung logs, and the thrown message names each attempted config and 
 own `error.name` — `TypeError` (an IDL member was rejected) vs `NotSupportedError` (the
 browser understood and said no) vs `EncodingError` (the encoder died) are three different
 bugs that otherwise read identically.
+
+## 16. Persistence
+
+The rule: **closing the tab must never lose work.** Every edit reaches storage inside a
+second, and the next visit comes back to it.
+
+```
+state/persist.ts   autosave (debounced), restore on boot, the recent list
+lib/idb.ts         IndexedDB, wrapped in about as little as it can be
+domain/project.ts  the document format — DOM-free, so check:math can exercise it
+domain/sources.ts  what an `image` param can hold (data URL vs `video:N`)
+```
+
+**IndexedDB, not localStorage.** An uploaded image lives in the scene as a data URL, so a
+project is routinely several megabytes and one photo exhausts localStorage's ~5MB. Two
+object stores, because listing must stay cheap: `projects` holds whole documents,
+`index` holds one small row each. Opening the panel reads only `index` and never pulls a
+saved photo into memory. Everything in `idb.ts` resolves rather than throws when storage
+is unusable (private windows, quota) — losing autosave is bad, a tool that won't start
+because it couldn't open a database is worse.
+
+### 16a. Video is the part that cannot be saved
+
+A page is not allowed to keep a file across a reload. That is a security rule, not a gap
+to engineer around, so a restored project that used a clip is **incomplete by
+construction** and the only honest options are to say so or to lie.
+
+Hence the **clip manifest**: `ProjectDoc.clips` records the name, size and length of every
+clip the scene points at. After a reload it is the *only* surviving record of what the
+scene wants, which is what lets the app say "re-link beach-walk.mp4, 1920×1080, 12.4s"
+instead of rendering an empty canvas and looking broken.
+
+Two consequences worth keeping straight:
+
+- **Describing a clip reads live first, manifest second.** `videoInfo(ref) ?? remembered`.
+  Rebuilding from live state alone would rename every missing clip to "Unknown clip" on
+  the next save — a save → reload → save cycle would quietly destroy the only clue about
+  which file to find. `makeProject` also carries a reference nothing can describe rather
+  than dropping it, so an un-re-linked project stays re-linkable.
+- **Re-linking is a scene rewrite, not an assignment.** Re-registering a file mints a new
+  id, so the flow is `registerVideo(file)` → `remapClipRef(scene, oldRef, newRef)`. It
+  goes through the undo stack like any other edit.
+
+### 16b. Reserve before you load
+
+Clip ids come from a per-session counter (`video:${++seq}`). A restored scene pointing at
+`video:1` and the very next uploaded clip — also minted `video:1` — would collide, and
+that layer would silently start rendering a file it has nothing to do with.
+
+`applyProject()` therefore calls `reserveVideoRefs(collectClipRefs(scene))` **before** the
+scene lands. Order is load-bearing; reserving after would leave the window open. This
+makes the collision impossible rather than unlikely, which is the right bar for a bug
+whose symptom is "the wrong video appeared and I don't know why".
+
+### 16c. Loading adopts, it doesn't merge
+
+`adoptScene()` clears history, selection, playhead and the per-layer mode-param memory.
+One undo must never jump between two unrelated documents, and the mode memory can hold a
+whole image belonging to the scene being replaced.
+
+"Start fresh" mints a **new** project id rather than reusing the current one — otherwise
+the first autosave would overwrite the very project it just offered to restore. The old
+one stays in Recent.
+
+### 16d. What the UI owes the user
+
+Alerts render **above** the panels, not inside one: a restore, a clip needing a re-link
+and storage that isn't working are all things to act on, and a collapsed panel is not a
+notification. They render nothing when there is nothing to say.

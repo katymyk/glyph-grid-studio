@@ -86,10 +86,12 @@ functions into a Node script if needed.
 
 - `npm run typecheck` — `tsc -b`. Clean on a good tree, so any error is yours.
 - `npm run check:math` — compiles the **DOM-free** engine modules (`engine/halftone/*`,
-  `engine/tone.ts`, `engine/rng.ts`, `domain/params.ts`) with `tsc` and runs
-  `scripts/check-halftone.cjs` under node: screen geometry, tone mapping, dot-size
-  response, the dither algorithms, the run merge, determinism. **Those files must stay
-  DOM-free** or this stops working.
+  `engine/tone.ts`, `engine/rng.ts`, `domain/params.ts`, `domain/project.ts`,
+  `domain/sources.ts`) with `tsc` and runs `scripts/check-halftone.cjs` under node: screen
+  geometry, tone mapping, dot-size response, the dither algorithms, the run merge,
+  determinism — plus the whole save/reopen surface (clip-reference collection including
+  keyframed values, the re-link rewrite, round-tripping, and every way a bad file is
+  refused). **Those files must stay DOM-free** or this stops working.
 - `npm run check:smoke` — a Vite SSR build of `src/__smoke.tsx`, then `node`. This is
   the only headless way to catch runtime faults `tsc` cannot see: a panel dereferencing
   a param a mode doesn't declare, a mode-registry import cycle, conditional-control
@@ -101,6 +103,27 @@ functions into a Node script if needed.
 Still browser-only, and worth doing by hand after engine changes: interactive latency
 while dragging sliders, and the six export buttons (especially transparent-background
 PNG/SVG and the GIF/MP4-on-white paths).
+
+### Persistence (`state/persist.ts`, `lib/idb.ts`)
+
+Work autosaves to IndexedDB (not localStorage — one uploaded photo is a multi-megabyte
+data URL and blows past the ~5MB ceiling) and is restored on the next visit. Two rules
+that are easy to break:
+
+- **`reserveVideoRefs` must run before a restored scene lands.** Clip ids come from a
+  per-session counter, so a restored scene pointing at `video:1` and the next uploaded
+  clip — also minted `video:1` — would collide and that layer would silently render the
+  wrong file. `applyProject()` reserves first, then loads; keep that order.
+- **The clip manifest is the only surviving record of a missing clip.** A browser cannot
+  keep a video file across a reload, so after a restore the file is gone and
+  `store.clips` holds the last description of it. Describe clips from live `videoInfo`
+  *falling back* to that manifest — rebuilding from live state alone renames every
+  missing clip to "Unknown clip" and destroys the one clue about which file to re-link.
+
+IndexedDB itself has no headless coverage. It is verified with playwright-core against
+real Chrome (see the browser recipe): autosave across a reload, the restore notice, the
+`.ggs` file round trip, "start fresh" keeping the previous project in Recent, and the
+missing-clip alert naming the file. Re-run that after touching this layer.
 
 For a **video source** specifically, the things that only a browser can tell you — and the
 checks that matter, because each one has a plausible silent failure:

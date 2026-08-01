@@ -843,5 +843,144 @@ sec('the frame grid (fps is the preview rate now, not just an export setting)');
   })());
 }
 
+// ------------------------------------------------------- saving and reopening
+//
+// The whole of "don't lose work" that can be checked without a browser. What cannot be
+// checked here: IndexedDB itself, and the ref collision `reserveVideoRefs` prevents —
+// minting an id needs a real <video>. The pure half of that guard (`videoRefSeq`) is
+// covered below, and the collision is what the reserve call is written to make impossible
+// rather than unlikely.
+sec('project: clip references');
+{
+  const project = require(D + '/domain/project.js');
+  const sources = require(D + '/domain/sources.js');
+  const { konst } = params;
+
+  const layer = (over) => ({
+    id: 'layer-1', name: 'L', visible: true, mode: 'halftone',
+    opacity: konst(1), blendMode: 'source-over', spawn: { kind: 'full' },
+    params: {}, morph: null, ...over,
+  });
+  const scene = (layers) => ({
+    width: 1920, height: 1080, fps: 25, duration: 4, background: '#fff', layers,
+  });
+
+  ok('a data URL is not a clip reference', !sources.isVideoRef('data:image/png;base64,AAA'));
+  ok('a clip reference is', sources.isVideoRef('video:3'));
+  ok('videoRefSeq reads the number', sources.videoRefSeq('video:12') === 12);
+  ok('videoRefSeq rejects a non-ref rather than returning NaN', sources.videoRefSeq('data:x') === 0);
+
+  const withClip = scene([
+    layer({ params: { image: konst('video:2'), cell: konst(8) } }),
+    layer({ id: 'layer-2', params: { image: konst('data:image/png;base64,AAA') } }),
+  ]);
+  ok('finds a clip and ignores an image', JSON.stringify(project.collectClipRefs(withClip)) === '["video:2"]');
+
+  // A keyed `image` is legal in the model, and a save that walked only the current value
+  // would write a file that renders a clip it never mentions.
+  const keyed = scene([layer({
+    params: { image: { kind: 'keys', keys: [
+      { t: 0, value: 'video:5', easeOut: 'cubic', easeIn: 'cubic' },
+      { t: 2, value: 'video:1', easeOut: 'cubic', easeIn: 'cubic' },
+    ] } },
+  })]);
+  ok('walks keyframe values, sorted and de-duplicated',
+    JSON.stringify(project.collectClipRefs(keyed)) === '["video:1","video:5"]');
+
+  const morphed = scene([layer({
+    params: { image: konst('video:1') },
+    morph: { mode: 'ascii', params: { image: konst('video:9') }, start: 1, end: 2,
+             style: 'dissolve', easeOut: 'cubic', easeIn: 'cubic' },
+  })]);
+  ok('walks the morph target too',
+    JSON.stringify(project.collectClipRefs(morphed)) === '["video:1","video:9"]');
+
+  sec('project: re-linking rewrites the scene');
+  {
+    // Re-registering a file mints a NEW id, so a re-link can never be an assignment back
+    // onto the saved reference — it has to rewrite every mention of it.
+    const out = project.remapClipRef(morphed, 'video:9', 'video:20');
+    ok('the morph reference moved', out.layers[0].morph.params.image.value === 'video:20');
+    ok('the base reference is untouched', out.layers[0].params.image.value === 'video:1');
+    ok('nothing matched -> the same object back (no undo churn)',
+      project.remapClipRef(morphed, 'video:404', 'video:1') === morphed);
+    const k = project.remapClipRef(keyed, 'video:5', 'video:6');
+    ok('a keyed reference is rewritten in place',
+      k.layers[0].params.image.keys[0].value === 'video:6' &&
+      k.layers[0].params.image.keys[1].value === 'video:1');
+  }
+
+  sec('project: save and reopen');
+  {
+    const info = { ref: 'video:2', name: 'beach.mp4', width: 1920, height: 1080, duration: 12.5 };
+    const doc = project.makeProject('My comp', withClip, (r) => (r === 'video:2' ? info : null), 1000);
+    const back = project.parseProject(project.projectToJSON(doc));
+    ok('round-trips the scene exactly', JSON.stringify(back.scene) === JSON.stringify(withClip));
+    ok('round-trips the name', back.name === 'My comp');
+    ok('carries the clip manifest', back.clips.length === 1 && back.clips[0].name === 'beach.mp4');
+
+    // The save → reload → save cycle. The clip is gone, so nothing can describe it; if the
+    // second save dropped the reference the project would stop being re-linkable, and if it
+    // dropped the NAME the person would lose the only clue about which file to find.
+    const known = new Map(back.clips.map((c) => [c.ref, c]));
+    const again = project.makeProject('My comp', back.scene, (r) => known.get(r) ?? null, 2000);
+    ok('re-saving without the clip keeps the reference', again.clips.length === 1);
+    ok('...and keeps its name', again.clips[0].name === 'beach.mp4');
+
+    const orphan = project.makeProject('x', withClip, () => null, 0);
+    ok('a reference nothing can describe still travels', orphan.clips[0].ref === 'video:2');
+    ok('...labelled as unknown rather than dropped', orphan.clips[0].name === 'Unknown clip');
+  }
+
+  sec('project: what is missing after a reload');
+  {
+    const known = [{ ref: 'video:2', name: 'beach.mp4', width: 1920, height: 1080, duration: 12.5 }];
+    const gone = project.missingClips(withClip, known, () => false);
+    ok('lists the clip that is not loaded', gone.length === 1);
+    // The regression this exists to prevent: naming it from live state instead of the saved
+    // manifest gives "Unknown clip", which is precisely the information the user needs.
+    ok('names it from the manifest, not from live state', gone[0].name === 'beach.mp4');
+    ok('describes it well enough to go and find it', gone[0].duration === 12.5 && gone[0].width === 1920);
+    ok('a loaded clip is not listed', project.missingClips(withClip, known, () => true).length === 0);
+    ok('a reference with no manifest entry still lists',
+      project.missingClips(withClip, [], () => false)[0].name === 'Unknown clip');
+  }
+
+  sec('project: refusing a file, readably');
+  {
+    const refuses = (input, fragment) => {
+      try { project.parseProject(input); return false; }
+      catch (e) { return e instanceof project.ProjectParseError && e.message.includes(fragment); }
+    };
+    ok('not JSON at all', refuses('<html>', 'may not be a .ggs'));
+    ok('JSON, but not ours', refuses('{"hello":1}', "isn't a Glyph Grid Studio project"));
+    // Someone will open the After Effects export here. Naming which file they picked beats
+    // "not a project".
+    ok('the coordinates export is identified by name',
+      refuses(JSON.stringify({ width: 1920, height: 1080, items: [] }), 'coordinates export'));
+    ok('a newer format says so rather than half-loading',
+      refuses(JSON.stringify({ format: 'glyph-grid-studio', version: 99, scene: withClip }), 'newer version'));
+    ok('no layers', refuses(JSON.stringify(
+      { format: 'glyph-grid-studio', version: 1, scene: scene([]) }), 'no layers'));
+    ok('no canvas size', refuses(JSON.stringify(
+      { format: 'glyph-grid-studio', version: 1, scene: { fps: 25, duration: 4, layers: [layer({})] } }),
+      'canvas size'));
+    ok('a layer missing its settings names the layer',
+      refuses(JSON.stringify({ format: 'glyph-grid-studio', version: 1,
+        scene: scene([{ id: 'a', mode: 'ascii', opacity: konst(1) }]) }), 'Layer 1'));
+    ok('an older format still opens', project.parseProject(JSON.stringify(
+      { format: 'glyph-grid-studio', version: 0, scene: withClip })).scene.layers.length === 2);
+    ok('a missing name falls back rather than throwing', project.parseProject(JSON.stringify(
+      { format: 'glyph-grid-studio', version: 1, scene: withClip })).name === 'Untitled');
+  }
+
+  sec('project: filenames');
+  {
+    ok('spaces become hyphens', project.projectFileName('My Comp') === 'My-Comp.ggs');
+    ok('slashes cannot escape the filename', project.projectFileName('a/../b') === 'ab.ggs');
+    ok('an empty name still produces a file', project.projectFileName('   ') === 'untitled.ggs');
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

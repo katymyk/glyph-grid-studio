@@ -22,10 +22,13 @@
  * preview/export agreement needs. Byte-identical output across *browsers* is not on
  * offer for video and never was — decoders differ.
  */
+import { VIDEO_REF_PREFIX, videoRefSeq } from '../domain/sources';
 import { fidelity, markSourcePending, notifySourceReady, onFidelityChange } from './sourceReady';
 import { sampleBytes, sampleDrawable, type Sample } from './sampleGrid';
 
-const PREFIX = 'video:';
+/** Re-exported so the many callers that ask "is this a clip?" keep one import site,
+    while the fact itself lives in the DOM-free domain layer (project saving needs it). */
+export { isVideoRef } from '../domain/sources';
 
 /** What the UI needs to describe a loaded clip. */
 export interface VideoInfo {
@@ -92,13 +95,21 @@ interface Entry {
 const videos = new Map<string, Entry>();
 let seq = 0;
 
-/** Is this `image` param value a video reference rather than an image data URL? */
-export function isVideoRef(src: unknown): src is string {
-  return typeof src === 'string' && src.startsWith(PREFIX);
-}
-
 export function videoInfo(ref: string): VideoInfo | null {
   return videos.get(ref)?.info ?? null;
+}
+
+/**
+ * Push the id counter past every reference in `refs`.
+ *
+ * Called when a project is loaded. Ids come from a per-session counter, so without this
+ * a restored scene pointing at `video:1` and the very next clip you upload — also minted
+ * `video:1` — would collide, and that layer would silently start rendering a file it has
+ * nothing to do with. Reserving is cheap and makes the collision impossible rather than
+ * unlikely.
+ */
+export function reserveVideoRefs(refs: string[]): void {
+  for (const r of refs) seq = Math.max(seq, videoRefSeq(r));
 }
 
 /**
@@ -125,7 +136,7 @@ export async function registerVideo(file: File): Promise<VideoInfo> {
     URL.revokeObjectURL(url);
     throw e;
   }
-  const ref = `${PREFIX}${++seq}`;
+  const ref = `${VIDEO_REF_PREFIX}${++seq}`;
   const info: VideoInfo = {
     ref,
     name: file.name,

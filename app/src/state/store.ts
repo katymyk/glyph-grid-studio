@@ -17,6 +17,7 @@ import {
 import type { EaseHalf } from '../domain/easing';
 import { frameAt, frameCount, timeOfFrame } from '../domain/timeline';
 import { defaultScene } from '../domain/defaults';
+import { remapClipRef, type ClipManifest, type ProjectDoc } from '../domain/project';
 import type { Layer, LayerMorph, MorphStyle, Scene, SpawnZone } from '../domain/scene';
 import { getMode } from '../engine/modes';
 import { onSourceReady, setFidelity } from '../engine/sourceReady';
@@ -45,6 +46,29 @@ interface StudioState {
   selection: TimelineSel;
   past: Scene[];
   future: Scene[];
+
+  /** Which saved project this session is writing to. Autosave keys off it, so starting a
+      new project must mint a new one — otherwise "start fresh" overwrites what it just
+      offered to restore. */
+  projectId: string;
+  projectName: string;
+  /** True when this session's scene came back from autosave rather than being started
+      here. Drives the "picked up where you left off" notice, and nothing else. */
+  restored: boolean;
+  /**
+   * Last known description of every clip the document has referred to.
+   *
+   * Survives the clip itself. After a reload the file is gone but this is still here, and
+   * it is the only remaining record of what the scene is asking for — so it is what lets
+   * the app say "re-link beach-walk.mp4, 1920×1080, 12.4s" instead of "a video is missing".
+   */
+  clips: ClipManifest[];
+  setProjectName: (name: string) => void;
+  loadProject: (doc: ProjectDoc, opts?: { id?: string; restored?: boolean }) => void;
+  newProject: () => void;
+  dismissRestored: () => void;
+  /** Point every reference to `from` at `to`. How re-linking a clip lands. */
+  remapClip: (from: string, to: string) => void;
 
   selectLayer: (id: string) => void;
   addLayer: () => void;
@@ -171,6 +195,34 @@ const HISTORY_MAX = 80;
 const modeParamsCache: Record<string, Record<string, Record<string, Param<unknown>>>> = {};
 let layerSeq = 1;
 
+/** Not part of the render path, so an unseeded id is fine here (see `surpriseScene`). */
+export function newProjectId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return `p-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Loading a scene from elsewhere (a file, or autosave) resets everything that describes
+ * *this session's* relationship to it: history, what's selected, where the playhead is.
+ * Keeping the old undo stack would let one undo jump between two unrelated documents.
+ */
+function adoptScene(scene: Scene): Pick<
+  StudioState,
+  'scene' | 'activeLayerId' | 'past' | 'future' | 'selection' | 'playhead' | 'playing'
+> {
+  for (const k of Object.keys(modeParamsCache)) delete modeParamsCache[k];
+  return {
+    scene,
+    activeLayerId: scene.layers[0]?.id ?? 'layer-1',
+    past: [],
+    future: [],
+    selection: null,
+    playhead: 0,
+    playing: false,
+  };
+}
+
 function withLayer(scene: Scene, id: string, fn: (l: Layer) => Layer): Scene {
   return { ...scene, layers: scene.layers.map((l) => (l.id === id ? fn(l) : l)) };
 }
@@ -284,6 +336,50 @@ export const useStudio = create<StudioState>((set, get) => ({
   selection: null,
   past: [],
   future: [],
+
+  projectId: newProjectId(),
+  projectName: 'Untitled',
+  restored: false,
+  clips: [],
+
+  setProjectName: (name) => set({ projectName: name }),
+
+  loadProject: (doc, opts) => {
+    // Decoded frames belong to the clips of the scene being replaced; a new document has
+    // no claim on ~96MB of them. The clips themselves stay registered so a re-link can
+    // still find one that is already open.
+    clearVideoFrames();
+    set({
+      ...adoptScene(doc.scene),
+      projectId: opts?.id ?? newProjectId(),
+      projectName: doc.name,
+      restored: opts?.restored ?? false,
+      clips: doc.clips,
+    });
+  },
+
+  // A NEW id on purpose: "start fresh" must not autosave over the project it was just
+  // offering to restore. The old one stays in the recent list.
+  newProject: () => {
+    clearVideoFrames();
+    set({
+      ...adoptScene(defaultScene()),
+      projectId: newProjectId(),
+      projectName: 'Untitled',
+      restored: false,
+      clips: [],
+    });
+  },
+
+  dismissRestored: () => set({ restored: false }),
+
+  remapClip: (from, to) => {
+    const cur = get().scene;
+    const next = remapClipRef(cur, from, to);
+    if (next === cur) return; // nothing pointed at `from`
+    recordNow(cur);
+    set({ future: [], scene: next });
+  },
 
   selectLayer: (id) => set({ activeLayerId: id }),
 

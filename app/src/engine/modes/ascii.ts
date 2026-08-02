@@ -7,10 +7,6 @@ import { inkFromLum } from '../tone';
 import type { ModeContext, RenderMode } from './types';
 
 export interface AsciiParams {
-  image: string | null; // image data URL, or a `video:N` reference
-  /** Offset into the source clip, in seconds. Inert for a still image; keyframe it to
-      retime a video on the existing timeline. Mirrors halftone's param of the same name. */
-  srcTime: number;
   ramp: string;
   invert: boolean;
   useImgColors: boolean;
@@ -28,8 +24,6 @@ export interface AsciiParams {
 
 function asciiDefaults(): AsciiParams {
   return {
-    image: null,
-    srcTime: 0,
     ramp: ' .:-=+*#%@',
     invert: false,
     useImgColors: false,
@@ -59,8 +53,6 @@ function read(r: Record<string, unknown>): AsciiParams {
   const d = asciiDefaults();
   const g = <T,>(k: keyof AsciiParams, f: T): T => (r[k as string] as T) ?? f;
   return {
-    image: g('image', d.image),
-    srcTime: g('srcTime', d.srcTime),
     ramp: g('ramp', d.ramp),
     invert: g('invert', d.invert),
     useImgColors: g('useImgColors', d.useImgColors),
@@ -80,6 +72,7 @@ function read(r: Record<string, unknown>): AsciiParams {
 export const asciiMode: RenderMode = {
   key: 'ascii',
   label: 'ASCII',
+  readsSource: true,
 
   defaultParams(): Record<string, Param<unknown>> {
     const d = asciiDefaults();
@@ -90,12 +83,12 @@ export const asciiMode: RenderMode = {
 
   placements(resolved: Record<string, unknown>, ctx: ModeContext): Placement[] {
     const p = read(resolved);
-    if (!p.image) return [];
+    if (!ctx.source) return [];
     const ramp = p.ramp.length ? p.ramp : ' .';
     // Quantise to a frame so the preview and every exported frame ask the source for
     // identical data. Inert for stills; how a video source is addressed.
-    const frame = Math.round((ctx.time + p.srcTime) * (ctx.fps || 25));
-    const sample = sampleSource(p.image, p.cols, p.rows, frame, ctx.fps || 25);
+    const frame = Math.round((ctx.time + ctx.srcTime) * (ctx.fps || 25));
+    const sample = sampleSource(ctx.source, p.cols, p.rows, frame, ctx.fps || 25);
     if (!sample) return []; // still decoding — repaint fires when ready
     const font = fontStack(p.fontKey);
     const cells = buildCells(p.cols, p.rows, ctx.width, ctx.height, p.seed);

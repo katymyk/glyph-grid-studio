@@ -2,9 +2,9 @@ import { useEffect, useRef } from 'react';
 import { keyIndexAt, resolveParam, type Keyframe, type Param } from '../domain/params';
 import { sampleCurve } from '../domain/easing';
 import { frameAt, frameAtWall, frameCount, timeOfFrame, type PlayAnchor } from '../domain/timeline';
-import type { Layer, LayerMorph } from '../domain/scene';
+import type { Layer, LayerMorph, Scene } from '../domain/scene';
 import { getMode } from '../engine/modes';
-import { readParam, useStudio, type Slot, type TimelineSel } from '../state/store';
+import { readSlotParam, SCENE_LAYER, useStudio, type Slot, type TimelineSel } from '../state/store';
 import { paramLabel } from './paramLabels';
 import { EasingInspector } from './EasingInspector';
 import styles from '../ui/timeline.module.css';
@@ -33,6 +33,21 @@ function rowsForLayer(layer: Layer): TrackRow[] {
     }
   }
   return rows;
+}
+
+/**
+ * The scene's own animated tracks, shown above the layers.
+ *
+ * Today that is the clip offset and nothing else. It gets its own group rather than being
+ * hung off a layer because it belongs to the composition — retiming the source moves every
+ * layer's picture at once, and filing it under one of them would say otherwise.
+ */
+function rowsForScene(scene: Scene): TrackRow[] {
+  const p = scene.source.srcTime;
+  if (p.kind !== 'keys') return [];
+  return [
+    { layerId: SCENE_LAYER, slot: 'scene', param: 'srcTime', label: 'Source time', keys: p.keys },
+  ];
 }
 
 const NICE_STEPS = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000];
@@ -134,7 +149,8 @@ export function Timeline() {
     setPlayhead(snap(((clientX - rect.left) / Math.max(1, rect.width)) * duration));
 
   const layers = [...scene.layers].reverse(); // top layer first, like the Layers panel
-  const anyRows = scene.layers.some((l) => rowsForLayer(l).length > 0 || l.morph);
+  const sceneTracks = rowsForScene(scene);
+  const anyRows = sceneTracks.length > 0 || scene.layers.some((l) => rowsForLayer(l).length > 0 || l.morph);
 
   return (
     <div className={styles.dock} style={{ height }}>
@@ -250,6 +266,29 @@ export function Timeline() {
           {/* tracks */}
           <div className={styles.scroll}>
             <div className={styles.rows}>
+              {sceneTracks.length > 0 && (
+                <div>
+                  <div className={styles.layerHead}>
+                    <span className={styles.layerName} style={{ cursor: 'default' }}>
+                      · Scene
+                    </span>
+                    <span className={styles.layerName} style={{ paddingLeft: 8, cursor: 'default' }}>
+                      Source
+                    </span>
+                  </div>
+                  {sceneTracks.map((row) => (
+                    <ParamRow
+                      key={`scene:${row.param}`}
+                      row={row}
+                      duration={duration}
+                      playhead={playhead}
+                      snap={snap}
+                      selection={selection}
+                    />
+                  ))}
+                </div>
+              )}
+
               {layers.map((layer) => {
                 const rows = rowsForLayer(layer);
                 const isActive = layer.id === activeLayerId;
@@ -381,7 +420,9 @@ function ParamRow({
         <span
           className={`${styles.rowLabel} ${selHere ? styles.rowLabelOn : ''}`}
           title={row.label}
-          onClick={() => selectLayer(row.layerId)}
+          // A scene track has no layer to select, and selecting the empty id would
+          // silently jump the sidebar to the bottom layer.
+          onClick={() => row.slot !== 'scene' && selectLayer(row.layerId)}
         >
           {row.label}
         </span>
@@ -597,8 +638,14 @@ function MorphRow({
 }
 
 /** Value of a selected track at time t, formatted for the inspector. */
-export function trackValueAt(layer: Layer, slot: Slot, param: string, t: number): string {
-  const p = readParam(layer, slot, param);
+export function trackValueAt(
+  scene: Scene,
+  layerId: string,
+  slot: Slot,
+  param: string,
+  t: number,
+): string {
+  const p = readSlotParam(scene, layerId, slot, param);
   if (!p) return '—';
   const v = resolveParam(p, t);
   if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2);
@@ -608,4 +655,4 @@ export function trackValueAt(layer: Layer, slot: Slot, param: string, t: number)
   return String(v);
 }
 
-export { rowsForLayer };
+export { rowsForLayer, rowsForScene };

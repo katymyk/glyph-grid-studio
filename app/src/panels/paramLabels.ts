@@ -5,12 +5,10 @@ const EXTRA: Record<string, string> = {
   opacity: 'Layer opacity',
   seed: 'Seed',
   palette: 'Palette',
-  image: 'Image',
   fontKey: 'Font',
   glyphs: 'Symbols',
   ramp: 'Character ramp',
-  // Halftone params with no control of their own (or whose control is a readout).
-  srcTime: 'Source time',
+  // Halftone params whose control is a readout rather than a named input.
   maxElements: 'Element cap',
 };
 

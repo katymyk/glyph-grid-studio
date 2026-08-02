@@ -104,6 +104,11 @@ function modePlacements(
     height: scene.height,
     time: t,
     fps: scene.fps,
+    // One source for the whole stack: every layer, and both halves of a morph, screen
+    // the same picture at the same clip position. That is the guarantee, and it holds
+    // because they are all handed it from here rather than each carrying a copy.
+    source: scene.source.image,
+    srcTime: resolveParam(scene.source.srcTime, t),
   });
 }
 

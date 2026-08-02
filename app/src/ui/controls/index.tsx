@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { resolveParam, type Param } from '../../domain/params';
-import { readParam, resolveSlotParams, useStudio, type Slot } from '../../state/store';
+import { readSlotParam, resolveSlotParams, useStudio, type Slot } from '../../state/store';
 import { Panel } from '../Panel';
 import { ControlSlider } from '../ControlSlider';
 import { Segmented } from '../Segmented';
@@ -95,8 +95,14 @@ export function registerControl(kind: string, render: (a: RenderArgs) => ReactNo
     as hard switches; free text and preset chips stay constant. */
 const ANIMATABLE = new Set(['slider', 'segmented', 'select', 'toggle']);
 
-/** Renders one control from the registry, wired to the store. When the param is
-    animated, edits upsert a keyframe at the playhead instead of a constant. */
+/**
+ * Renders one control from the registry, wired to the store. When the param is
+ * animated, edits upsert a keyframe at the playhead instead of a constant.
+ *
+ * Slot-agnostic: the same component drives a mode param, a morph target's param, layer
+ * opacity, or a scene param (`slot: 'scene'`, `layerId: SCENE_LAYER`). That is what lets
+ * the Source panel's clip offset be an ordinary keyable slider without a second code path.
+ */
 export function ControlView({
   layerId,
   control,
@@ -111,10 +117,7 @@ export function ControlView({
   const upsertKeyframe = useStudio((s) => s.upsertKeyframe);
   const toggleParamAnimated = useStudio((s) => s.toggleParamAnimated);
   const playhead = useStudio((s) => s.playhead);
-  const param = useStudio((s) => {
-    const l = s.scene.layers.find((x) => x.id === layerId);
-    return l ? readParam(l, slot, control.param) : undefined;
-  });
+  const param = useStudio((s) => readSlotParam(s.scene, layerId, slot, control.param));
   const animated = param?.kind === 'keys';
   const value = param ? resolveParam(param as Param<unknown>, playhead) : undefined;
   const render = registry[control.kind];

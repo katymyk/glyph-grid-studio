@@ -1,9 +1,9 @@
 import { keysOf, type Keyframe, type Param } from '../domain/params';
 import { SEGMENT_PRESETS, type EaseHalf } from '../domain/easing';
 import { frameAt, frameCount, timeOfFrame } from '../domain/timeline';
-import type { Layer, MorphStyle } from '../domain/scene';
+import type { Layer, MorphStyle, Scene } from '../domain/scene';
 import { getMode } from '../engine/modes';
-import { readParam, useStudio, type Slot } from '../state/store';
+import { readSlotParam, useStudio, type Slot } from '../state/store';
 import { paramLabel } from './paramLabels';
 import { trackValueAt } from './Timeline';
 import { EaseCurve } from '../ui/EaseCurve';
@@ -37,14 +37,18 @@ export function EasingInspector() {
     );
   }
 
-  const layer = scene.layers.find((l) => l.id === selection.layerId);
-  if (!layer) return null;
+  if (selection.kind === 'morph') {
+    const layer = scene.layers.find((l) => l.id === selection.layerId);
+    if (!layer) return null;
+    return <MorphInspector layer={layer} fps={scene.fps} duration={scene.duration} playhead={playhead} />;
+  }
 
-  return selection.kind === 'morph' ? (
-    <MorphInspector layer={layer} fps={scene.fps} duration={scene.duration} playhead={playhead} />
-  ) : (
+  // No layer lookup up front: a scene track (the clip offset) has no layer, and demanding
+  // one here is what would leave its keyframes uneditable.
+  return (
     <KeyInspector
-      layer={layer}
+      scene={scene}
+      layerId={selection.layerId}
       slot={selection.slot}
       param={selection.param}
       index={selection.index}
@@ -54,15 +58,26 @@ export function EasingInspector() {
   );
 }
 
+/** Human name for the selected track, matching the label the timeline gutter shows. */
+function trackLabel(scene: Scene, layerId: string, slot: Slot, param: string): string {
+  if (slot === 'scene') return 'Source time';
+  if (slot === 'layer') return 'Layer opacity';
+  const layer = scene.layers.find((l) => l.id === layerId);
+  if (!layer) return param;
+  return paramLabel(slot === 'morph' ? layer.morph?.mode ?? layer.mode : layer.mode, param);
+}
+
 function KeyInspector({
-  layer,
+  scene,
+  layerId,
   slot,
   param,
   index,
   fps,
   playhead,
 }: {
-  layer: Layer;
+  scene: Scene;
+  layerId: string;
   slot: Slot;
   param: string;
   index: number;
@@ -76,19 +91,18 @@ function KeyInspector({
   const selectTimeline = useStudio((s) => s.selectTimeline);
   const setPlayhead = useStudio((s) => s.setPlayhead);
 
-  const p = readParam(layer, slot, param) as Param<unknown> | undefined;
+  const p = readSlotParam(scene, layerId, slot, param) as Param<unknown> | undefined;
   const keys = keysOf(p);
   const key = keys[index];
   if (!key) return null;
   const prev = keys[index - 1];
   const next = keys[index + 1];
 
-  const mode = slot === 'morph' ? layer.morph?.mode ?? layer.mode : layer.mode;
-  const label = slot === 'layer' ? 'Layer opacity' : paramLabel(mode, param);
+  const label = trackLabel(scene, layerId, slot, param);
   const goto = (i: number) => {
     const k = keys[i];
     if (!k) return;
-    selectTimeline({ kind: 'key', layerId: layer.id, slot, param, index: i });
+    selectTimeline({ kind: 'key', layerId, slot, param, index: i });
     setPlayhead(k.t);
   };
   const localProgress = (a: Keyframe<unknown>, b: Keyframe<unknown>) => {
@@ -107,7 +121,7 @@ function KeyInspector({
       </p>
       <p className={styles.sideSub}>
         frame {frameAt({ fps }, key.t)} · {key.t.toFixed(2)}s · value{' '}
-        {trackValueAt(layer, slot, param, key.t)}
+        {trackValueAt(scene, layerId, slot, param, key.t)}
       </p>
 
       {prev ? (
@@ -117,8 +131,8 @@ function KeyInspector({
           easeIn={key.easeIn}
           held={prev.hold === true}
           progress={localProgress(prev, key)}
-          onOut={(c) => setKeyframeEase(layer.id, slot, param, index - 1, 'out', c)}
-          onIn={(c) => setKeyframeEase(layer.id, slot, param, index, 'in', c)}
+          onOut={(c) => setKeyframeEase(layerId, slot, param, index - 1, 'out', c)}
+          onIn={(c) => setKeyframeEase(layerId, slot, param, index, 'in', c)}
         />
       ) : (
         <div className={styles.block}>
@@ -136,8 +150,8 @@ function KeyInspector({
           easeIn={next.easeIn}
           held={key.hold === true}
           progress={localProgress(key, next)}
-          onOut={(c) => setKeyframeEase(layer.id, slot, param, index, 'out', c)}
-          onIn={(c) => setKeyframeEase(layer.id, slot, param, index + 1, 'in', c)}
+          onOut={(c) => setKeyframeEase(layerId, slot, param, index, 'out', c)}
+          onIn={(c) => setKeyframeEase(layerId, slot, param, index + 1, 'in', c)}
         />
       ) : (
         <div className={styles.block}>
@@ -155,7 +169,7 @@ function KeyInspector({
         <input
           type="checkbox"
           checked={key.hold === true}
-          onChange={(e) => setKeyframeHold(layer.id, slot, param, index, e.target.checked)}
+          onChange={(e) => setKeyframeHold(layerId, slot, param, index, e.target.checked)}
         />
       </div>
 
@@ -171,13 +185,13 @@ function KeyInspector({
         <button
           className={styles.sideBtn}
           title="Give every keyframe in this track the easing of this one"
-          onClick={() => setTrackEasing(layer.id, slot, param, key.easeOut, key.easeIn)}
+          onClick={() => setTrackEasing(layerId, slot, param, key.easeOut, key.easeIn)}
         >
           Apply to track
         </button>
         <button
           className={`${styles.sideBtn} ${styles.sideBtnDanger}`}
-          onClick={() => deleteKeyframe(layer.id, slot, param, index)}
+          onClick={() => deleteKeyframe(layerId, slot, param, index)}
           title="Delete this keyframe"
         >
           Delete ◆

@@ -35,10 +35,6 @@ import type { ModeContext, RenderMode } from './types';
 export type HalftoneAlgo = 'halftone' | DitherAlgo;
 
 export interface HalftoneParams {
-  image: string | null; // image data URL, or a `video:N` reference
-  /** Offset into the source clip, in seconds. Inert for a still image. Keyframe it and
-      you have retimed the clip — no new machinery, it rides the existing timeline. */
-  srcTime: number;
   algo: HalftoneAlgo;
 
   // dot screen
@@ -75,8 +71,6 @@ export interface HalftoneParams {
 
 function halftoneDefaults(): HalftoneParams {
   return {
-    image: null,
-    srcTime: 0,
     algo: 'halftone',
     cell: 8,
     angle: 45,
@@ -111,8 +105,6 @@ function read(r: Record<string, unknown>): HalftoneParams {
   const d = halftoneDefaults();
   const g = <T,>(k: keyof HalftoneParams, f: T): T => (r[k as string] as T) ?? f;
   return {
-    image: g('image', d.image),
-    srcTime: g('srcTime', d.srcTime),
     algo: g('algo', d.algo),
     cell: g('cell', d.cell),
     angle: g('angle', d.angle),
@@ -174,6 +166,7 @@ function inkColor(p: HalftoneParams): string {
 export const halftoneMode: RenderMode = {
   key: 'halftone',
   label: 'Halftone',
+  readsSource: true,
 
   defaultParams(): Record<string, Param<unknown>> {
     const d = halftoneDefaults();
@@ -184,18 +177,18 @@ export const halftoneMode: RenderMode = {
 
   placements(resolved: Record<string, unknown>, ctx: ModeContext): Placement[] {
     const p = read(resolved);
-    if (!p.image) return [];
+    if (!ctx.source) return [];
     const { width: W, height: H } = ctx;
     // Quantise to a frame so the preview and every exported frame ask the source for
     // identical data. Inert for stills; how a video source is addressed.
     const fps = ctx.fps || 25;
-    const frame = Math.round((ctx.time + p.srcTime) * fps);
+    const frame = Math.round((ctx.time + ctx.srcTime) * fps);
 
     if (p.algo === 'halftone') {
       // One working grid per (image, canvas size): `cell` and `angle` are the params
       // people animate, and the sample cache is keyed by grid size, so a resolution
       // that tracked `cell` would re-downscale the source on most frames of a keyframe.
-      const field = sampleSource(p.image, workingWidth(W), workingHeight(W, H), frame, fps);
+      const field = sampleSource(ctx.source, workingWidth(W), workingHeight(W, H), frame, fps);
       if (!field) return []; // still decoding — a repaint fires when it lands
       return buildDots(field, W, H, {
         cell: effectiveCell(W, H, Math.max(1, p.cell), p.lattice, p.maxElements),
@@ -219,7 +212,7 @@ export const halftoneMode: RenderMode = {
     // cols×rows already area-averages, so there is no separate block-average pass.
     const px = effectivePixelSize(W, H, Math.max(1, p.pixel), p.maxElements);
     const field = sampleSource(
-      p.image,
+      ctx.source,
       Math.max(2, Math.round(W / px)),
       Math.max(2, Math.round(H / px)),
       frame,

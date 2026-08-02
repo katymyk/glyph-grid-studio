@@ -22,10 +22,6 @@ export function App() {
   const panels = panelsForMode(layer.mode);
   const morph = layer.morph;
   const morphPanels = morph ? panelsForMode(morph.mode) : [];
-  // Derived, not a list of mode names: any mode that declares an `image` param gets
-  // the upload panel, so the next image-consuming mode needs no change here.
-  const hasSource = 'image' in layer.params;
-  const morphHasSource = !!morph && 'image' in morph.params;
 
   // Undo/redo + transport keys (ignored while typing in a field)
   useEffect(() => {
@@ -89,9 +85,14 @@ export function App() {
           <ProjectAlerts />
           <ProjectPanel />
           <ActionsBar />
+          {/* The composition first — the canvas it lands on and the picture every layer
+              screens — then the layers, then the treatment the selected layer applies.
+              Both of these are Scene properties, which is exactly why they sit above the
+              layer stack rather than inside it. */}
+          <CanvasPanel />
+          <SourcePanel />
           <LayersPanel />
           <ModePanel />
-          {hasSource && <SourcePanel />}
           {panels.map((def) => (
             <SchemaPanel key={def.id} layerId={layer.id} def={def} />
           ))}
@@ -112,7 +113,6 @@ export function App() {
               >
                 morph target · {getMode(morph.mode).label}
               </div>
-              {morphHasSource && <SourcePanel slot="morph" />}
               {morphPanels.map((def) => (
                 <SchemaPanel
                   key={`morph-${def.id}`}
@@ -128,7 +128,6 @@ export function App() {
 
           <SpawnPanel />
           <ColorsPanel />
-          <CanvasPanel />
           <ExportPanel />
           <ViewPanel />
           <SeedPanel />

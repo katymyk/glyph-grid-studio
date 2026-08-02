@@ -14,6 +14,7 @@
 import {
   collectClipRefs,
   makeProject,
+  migrateScene,
   type ClipManifest,
   type ProjectDoc,
 } from '../domain/project';
@@ -59,8 +60,12 @@ export function currentDoc(): ProjectDoc {
  * that window entirely rather than narrowing it.
  */
 export function applyProject(doc: ProjectDoc, opts?: { id?: string; restored?: boolean }): void {
-  reserveVideoRefs(collectClipRefs(doc.scene));
-  useStudio.getState().loadProject(doc, opts);
+  // Migrate BEFORE collecting: in a version-1 document the clip reference is still down
+  // in a layer's params, where `collectClipRefs` no longer looks — so reserving off the
+  // raw scene would reserve nothing and leave exactly the collision this guards against.
+  const scene = migrateScene(doc.scene);
+  reserveVideoRefs(collectClipRefs(scene));
+  useStudio.getState().loadProject({ ...doc, scene }, opts);
 }
 
 // ------------------------------------------------------------------ autosave

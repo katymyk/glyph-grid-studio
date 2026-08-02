@@ -1,5 +1,5 @@
 /**
- * What a layer's `image` param can hold, as a fact the pure layer owns.
+ * What `scene.source.image` can hold, as a fact the pure domain owns.
  *
  * A still image is inlined as a data URL. A video is registered out-of-band and
  * referenced by a short id (`video:1`) — see `engine/videoSource.ts` for why.
@@ -11,7 +11,7 @@
  */
 export const VIDEO_REF_PREFIX = 'video:';
 
-/** Is this `image` param value a video reference rather than an image data URL? */
+/** Is this source value a video reference rather than an image data URL? */
 export function isVideoRef(src: unknown): src is string {
   return typeof src === 'string' && src.startsWith(VIDEO_REF_PREFIX);
 }

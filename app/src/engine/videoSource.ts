@@ -1,7 +1,7 @@
 /**
  * Video sources: an uploaded clip, sampled one frame at a time.
  *
- * A video is registered out-of-band and referenced from the layer's `image` param by a
+ * A video is registered out-of-band and referenced from `scene.source.image` by a
  * short id (`video:1`) rather than inlined the way an image data URL is. Not an
  * optimisation — a data URL of a 40MB clip is a 54MB string sitting in the scene, and
  * the scene is cloned into the undo stack on every edit.
@@ -435,10 +435,11 @@ function resync(e: Entry, L: LiveState, wantMs: number): void {
   L.resyncs = L.resyncs.filter((t) => now - t < RESYNC_WINDOW_MS);
   L.resyncs.push(now);
   if (L.resyncs.length > RESYNC_LIMIT) {
-    // Two layers on one clip at different `srcTime` ask this element to be in two places at
-    // once, and a decoder that cannot keep up looks identical. Seeking every frame is the
-    // stall this regime exists to avoid, so give up on live for this clip: slower, but
-    // correct and stable.
+    // A decoder that cannot keep up, or a scene asking this element for two positions at
+    // once. (The second used to be reachable — two layers on one clip at different
+    // `srcTime` — and now isn't: there is one source, and one offset, per scene. The guard
+    // stays for the first.) Seeking every frame is the stall this regime exists to avoid,
+    // so give up on live for this clip: slower, but correct and stable.
     disableLive(e, `${L.resyncs.length} resyncs in ${RESYNC_WINDOW_MS}ms`);
     return;
   }

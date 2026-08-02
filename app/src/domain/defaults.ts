@@ -1,6 +1,6 @@
 import { generativeMode } from '../engine/modes/generative';
 import { konst } from './params';
-import type { Scene } from './scene';
+import { defaultSource, type Scene } from './scene';
 
 /** A fresh single-layer generative scene (mirrors v1's starting look). */
 export function defaultScene(): Scene {
@@ -10,6 +10,7 @@ export function defaultScene(): Scene {
     fps: 25,
     duration: 4,
     background: '#ffffff',
+    source: defaultSource(),
     layers: [
       {
         id: 'layer-1',

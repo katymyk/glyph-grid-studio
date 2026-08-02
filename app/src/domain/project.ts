@@ -24,12 +24,17 @@
  *
  * DOM-free on purpose: this is checked headlessly (`npm run check:math`).
  */
-import type { Param } from './params';
-import type { Layer, Scene } from './scene';
+import { konst, type Param } from './params';
+import { defaultSource, type Scene, type SceneSource } from './scene';
 import { isVideoRef } from './sources';
 
-/** Bump when a change to `Scene` can't be read by the loader below. */
-export const PROJECT_VERSION = 1;
+/**
+ * Bump when a change to `Scene` can't be read by the loader below.
+ *
+ * 2 — the source (`image` + `srcTime`) moved from every layer's params onto the scene.
+ *     Version 1 files still load; `migrateScene` hoists them.
+ */
+export const PROJECT_VERSION = 2;
 export const PROJECT_EXT = 'ggs';
 const FORMAT = 'glyph-grid-studio';
 
@@ -54,64 +59,23 @@ export interface ProjectDoc {
 
 // ------------------------------------------------------------------ clip refs
 
-/** Every value a param can hold across all of time — a keyframed param has many. */
-function paramValues(p: Param<unknown>): unknown[] {
-  return p.kind === 'const' ? [p.value] : p.keys.map((k) => k.value);
-}
-
-function eachParamSet(layer: Layer): Record<string, Param<unknown>>[] {
-  return layer.morph ? [layer.params, layer.morph.params] : [layer.params];
-}
-
 /**
- * Clip references the scene points at, de-duplicated and sorted.
+ * Clip references the scene points at.
  *
- * Walks keyframe values too, not just the current one: `image` is normally constant, but
- * nothing in the model forbids keying it, and a save that missed a keyed reference would
- * produce a file that renders a clip it never mentions.
+ * One source per composition (see `SceneSource`), so this is at most one ref — but it
+ * stays a list because the manifest, the missing-clip alert and the re-link flow are all
+ * written against a set, and a second source (a matte, a second plate) would slot in here
+ * without touching any of them.
  */
 export function collectClipRefs(scene: Scene): string[] {
-  const refs = new Set<string>();
-  for (const layer of scene.layers) {
-    for (const set of eachParamSet(layer)) {
-      for (const p of Object.values(set)) {
-        for (const v of paramValues(p)) if (isVideoRef(v)) refs.add(v);
-      }
-    }
-  }
-  return [...refs].sort();
+  return isVideoRef(scene.source?.image) ? [scene.source.image as string] : [];
 }
 
 /** Rewrite every `from` reference to `to`. Returns the same scene object when nothing
     matched, so a no-op re-link doesn't churn the undo stack. */
 export function remapClipRef(scene: Scene, from: string, to: string): Scene {
-  if (from === to) return scene;
-  let touched = false;
-
-  const mapParam = (p: Param<unknown>): Param<unknown> => {
-    if (p.kind === 'const') {
-      if (p.value !== from) return p;
-      touched = true;
-      return { kind: 'const', value: to };
-    }
-    if (!p.keys.some((k) => k.value === from)) return p;
-    touched = true;
-    return { kind: 'keys', keys: p.keys.map((k) => (k.value === from ? { ...k, value: to } : k)) };
-  };
-
-  const mapSet = (set: Record<string, Param<unknown>>) => {
-    const out: Record<string, Param<unknown>> = {};
-    for (const [k, p] of Object.entries(set)) out[k] = mapParam(p);
-    return out;
-  };
-
-  const layers = scene.layers.map((l) => ({
-    ...l,
-    params: mapSet(l.params),
-    morph: l.morph ? { ...l.morph, params: mapSet(l.morph.params) } : null,
-  }));
-
-  return touched ? { ...scene, layers } : scene;
+  if (from === to || scene.source?.image !== from) return scene;
+  return { ...scene, source: { ...scene.source, image: to } };
 }
 
 /** A stand-in for a reference nothing can describe. Named rather than inlined because
@@ -197,6 +161,49 @@ function checkScene(v: unknown): Scene {
   return v as unknown as Scene;
 }
 
+// ------------------------------------------------------------------ migration
+
+/** A `Param<T>`-shaped value, as far as a file can be trusted to hold one. */
+function asParam<T>(v: unknown, fallback: Param<T>): Param<T> {
+  if (!isObj(v)) return fallback;
+  if (v.kind === 'const') return { kind: 'const', value: v.value as T };
+  if (v.kind === 'keys' && Array.isArray(v.keys) && v.keys.length) return v as unknown as Param<T>;
+  return fallback;
+}
+
+/**
+ * Bring a version-1 scene forward: the source moves from the layers onto the scene.
+ *
+ * In v1 every layer carried its own `image`/`srcTime`, which is why switching a layer's
+ * mode had to copy them across by hand. A v1 file can therefore name several sources, and
+ * this has to pick one — it takes the first layer that has one, reading bottom-up, which
+ * is paint order and so is the picture that was underneath everything.
+ *
+ * The keys are then stripped from every param set. Leaving them would be harmless to the
+ * renderer (no mode reads them now) but they would ride along in every save forever, and
+ * a stale `image` in a layer is a multi-megabyte data URL cloned onto the undo stack.
+ */
+export function migrateScene(scene: Scene): Scene {
+  if (scene.source) return scene;
+  let source: SceneSource | null = null;
+  const strip = (set: Record<string, Param<unknown>>): Record<string, Param<unknown>> => {
+    const { image, srcTime, ...rest } = set;
+    if (!source && isObj(image) && typeof (image as { value?: unknown }).value === 'string') {
+      source = {
+        image: (image as { value: string }).value,
+        srcTime: asParam<number>(srcTime, konst(0)),
+      };
+    }
+    return rest;
+  };
+  const layers = scene.layers.map((l) => ({
+    ...l,
+    params: strip(l.params),
+    morph: l.morph ? { ...l.morph, params: strip(l.morph.params) } : null,
+  }));
+  return { ...scene, source: source ?? defaultSource(), layers };
+}
+
 function checkClips(v: unknown): ClipManifest[] {
   if (!Array.isArray(v)) return [];
   const out: ClipManifest[] = [];
@@ -244,7 +251,9 @@ export function parseProject(raw: unknown): ProjectDoc {
     version,
     name: typeof v.name === 'string' && v.name.trim() ? v.name : 'Untitled',
     savedAt: num(v.savedAt) ? v.savedAt : 0,
-    scene: checkScene(v.scene),
+    // Keyed off the shape, not the version number: a file written before versions were
+    // taken seriously has no `source` either, and this is idempotent for one that does.
+    scene: migrateScene(checkScene(v.scene)),
     clips: checkClips(v.clips),
   };
 }

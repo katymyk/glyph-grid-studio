@@ -1,5 +1,5 @@
 import { segmentProgress, type EaseHalf } from './easing';
-import type { Param } from './params';
+import { konst, type Param } from './params';
 
 /** Restricts where a layer's elements may appear. Applied centrally after a mode
     produces placements, so every mode + export respects it uniformly. */
@@ -44,13 +44,40 @@ export interface Layer {
   morph: LayerMorph | null;
 }
 
-/** The whole document: a canvas + timeline + a stack of layers (bottom -> top). */
+/**
+ * The composition's source picture — ONE per scene, read by every mode that screens
+ * pixels (ASCII, Halftone).
+ *
+ * It sits here rather than on each layer because that is the shape of the work: one
+ * canvas, many treatments. You load a photo once and then stack a halftone over an
+ * ASCII pass over a dither of the *same* frame, and switching a layer's mode cannot
+ * lose the picture, because the picture was never the mode's to hold.
+ *
+ * `image` is a still's data URL or a `video:N` clip reference (see `sources.ts`), and
+ * is a plain value: one source per composition means nothing keys it. `srcTime` stays
+ * a Param because it is genuinely animatable — keyframe it and you have retimed the
+ * clip against the scene timeline.
+ */
+export interface SceneSource {
+  image: string | null;
+  /** Offset into the clip, in seconds. Inert for a still image. */
+  srcTime: Param<number>;
+}
+
+/** An empty composition source. Named because a fresh scene, the v1 loader and the
+    project validator all need the same starting shape. */
+export function defaultSource(): SceneSource {
+  return { image: null, srcTime: konst(0) };
+}
+
+/** The whole document: a canvas + timeline + a source + a stack of layers (bottom -> top). */
 export interface Scene {
   width: number;
   height: number;
   fps: number;
   duration: number; // seconds
   background: string | null; // null = transparent
+  source: SceneSource;
   layers: Layer[];
 }
 

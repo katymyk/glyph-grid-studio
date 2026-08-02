@@ -5,34 +5,28 @@ import {
   siteCount,
   type Lattice,
 } from '../engine/halftone/screen';
-import { isVideoRef } from '../engine/videoSource';
 import type { Control, PanelDef } from '../ui/controls/types';
 
 /**
- * Clip controls, for the modes that read a source. The whole group hides itself for a
- * still image (a SchemaPanel with nothing visible renders nothing), so `srcTime` — which
- * is meaningless for a picture — only appears once there is a clip to move through.
+ * The clip offset, rendered by the Source panel (which shows it only when the source is
+ * actually a clip) rather than by a mode's panel set.
+ *
+ * It is a scene param now, not a mode param — one source per composition — so it cannot
+ * live in `panelsForMode`. Still declared as schema data so it renders through the same
+ * control registry as everything else, keyframe diamond included.
  *
  * The range is fixed rather than the clip's length because a schema is static data; it
  * covers the common case of trimming into the first half-minute. Retiming beyond that is
  * what keyframing the param is for.
  */
-const clipPanel: PanelDef = {
-  id: 'clip',
-  title: 'Clip',
-  defaultOpen: true,
-  controls: [
-    {
-      kind: 'slider',
-      param: 'srcTime',
-      label: 'Source time (offset into clip)',
-      min: 0,
-      max: 30,
-      step: 0.05,
-      when: (p) => isVideoRef(p.image),
-      format: (v) => `${v.toFixed(2)}s`,
-    } satisfies Control,
-  ],
+export const srcTimeControl: Control = {
+  kind: 'slider',
+  param: 'srcTime',
+  label: 'Source time (offset into clip)',
+  min: 0,
+  max: 30,
+  step: 0.05,
+  format: (v) => `${v.toFixed(2)}s`,
 };
 
 /**
@@ -93,7 +87,6 @@ const generativePanels: PanelDef[] = [
 ];
 
 const asciiPanels: PanelDef[] = [
-  clipPanel,
   {
     id: 'ascii',
     title: 'ASCII',
@@ -173,7 +166,6 @@ function capReadout(p: Record<string, unknown>, scene: { width: number; height: 
 }
 
 const halftonePanels: PanelDef[] = [
-  clipPanel,
   {
     id: 'method',
     title: 'Method',

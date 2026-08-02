@@ -6,7 +6,7 @@
  */
 import { renderToString } from 'react-dom/server';
 import { App } from './App';
-import { useStudio } from './state/store';
+import { SCENE_LAYER, useStudio } from './state/store';
 import { getMode, listModes } from './engine/modes';
 import { resolveScene } from './engine/placements';
 import { paintScene } from './engine/paint';
@@ -78,16 +78,23 @@ ok('halftone declares palette and seed (the panels dereference these)', (() => {
   const p = getMode('halftone').defaultParams();
   return 'palette' in p && 'seed' in p;
 })());
-ok('halftone declares image + srcTime (source panel + video seam)', (() => {
-  const p = getMode('halftone').defaultParams();
-  return 'image' in p && 'srcTime' in p;
-})());
-// Both source-reading modes must carry srcTime, or the Clip panel dereferences a param
-// that mode doesn't declare and the slider silently binds to nothing.
-ok('ascii declares image + srcTime too', (() => {
-  const p = getMode('ascii').defaultParams();
-  return 'image' in p && 'srcTime' in p;
-})());
+// The source is a SCENE property now, so no mode may declare it as a param: a leftover
+// `image` in a mode's defaults would be a second, stale copy that a mode switch could
+// resurrect — the exact bug moving it to the scene removes.
+ok('no mode declares image or srcTime any more (the source belongs to the scene)',
+  listModes().every((m) => {
+    const p = m.defaultParams();
+    return !('image' in p) && !('srcTime' in p);
+  }));
+// The Source panel reports which modes are screening the picture off this flag, and the
+// two modes that call sampleSource are exactly the two that must set it.
+ok('ascii and halftone declare readsSource; generative does not',
+  getMode('ascii').readsSource === true &&
+    getMode('halftone').readsSource === true &&
+    !getMode('generative').readsSource);
+ok('a fresh scene starts with an empty source',
+  s().scene.source.image === null &&
+    (s().scene.source.srcTime as { kind: string; value?: unknown }).value === 0);
 
 // --------------------------------------------------------------- render tree
 sec('render the app with a halftone layer selected');
@@ -162,25 +169,44 @@ ok('an uncapped cell is not labelled capped', !readoutText(html).includes('cappe
 sec('the no-source path (actual pixel sampling needs a browser)');
 const URL_A = 'data:image/png;base64,STUB';
 ok('sampleSource(null) is null, not a throw', sampleSource(null, 8, 8, 0, 25) === null);
-ok('halftone with no image yields no placements, whatever the algo', (() => {
+ok('halftone with no source yields no placements, whatever the algo', (() => {
   for (const algo of ['halftone', 'floyd', 'atkinson', 'bayer4', 'bayer8', 'noise']) {
     const got = getMode('halftone').placements(
       { ...Object.fromEntries(Object.entries(getMode('halftone').defaultParams()).map(
-        ([k, p]) => [k, (p as { value: unknown }).value])), algo, image: null },
-      { width: 320, height: 180, time: 0, fps: 25 },
+        ([k, p]) => [k, (p as { value: unknown }).value])), algo },
+      { width: 320, height: 180, time: 0, fps: 25, source: null, srcTime: 0 },
     );
     if (got.length !== 0) return false;
   }
   return true;
 })());
-ok('the frame index is derived from time + srcTime (the video seam)', (() => {
-  // srcTime shifts which source frame is asked for; with no image this is inert, but
-  // the plumbing must exist for a video source to be retimeable on the timeline.
-  const p = getMode('halftone').defaultParams();
-  return 'srcTime' in p && (p.srcTime as { value: unknown }).value === 0;
+// The scene's source and clip offset must reach every mode as context, or a layer renders
+// a blank frame while the sidebar says a picture is loaded.
+ok('resolveScene hands the scene source (and srcTime at t) to the mode', (() => {
+  const st = useStudio.getState();
+  st.reset();
+  const lid = useStudio.getState().scene.layers[0].id;
+  st.setLayerMode(lid, 'halftone');
+  st.setSource('data:image/png;base64,CTXPROBE');
+  // Keyframed, and sampled ON the last key — so this asserts the plumbing, not a
+  // particular easing curve's value halfway along a segment.
+  st.toggleParamAnimated(SCENE_LAYER, 'srcTime', 0, 'scene');
+  st.upsertKeyframe(SCENE_LAYER, 'srcTime', 2, 4, 'scene');
+  const mode = getMode('halftone');
+  const orig = mode.placements;
+  const seen: { source: string | null; srcTime: number }[] = [];
+  mode.placements = (_r, ctx) => {
+    seen.push({ source: ctx.source, srcTime: ctx.srcTime });
+    return [];
+  };
+  resolveScene(useStudio.getState().scene, 2);
+  mode.placements = orig;
+  st.reset();
+  return seen.length === 1 && seen[0].source === 'data:image/png;base64,CTXPROBE' &&
+    seen[0].srcTime === 4;
 })());
 void primeImage;
-s().setConstParam(id, 'image', null);
+s().setLayerMode(id, 'halftone');
 
 // ------------------------------------------------------------------ video sources
 sec('video refs (decoding needs a browser; routing and timing do not)');
@@ -262,18 +288,26 @@ sec('live-playback resync policy');
   ok('fps 0 does not divide by zero', Number.isFinite(resyncThresholdMs(0)));
 }
 
-sec('the Clip panel appears only for a video source');
+sec('the Source panel: always present, clip offset only for a clip');
 {
   const st = useStudio.getState();
   st.reset();
   const lid = useStudio.getState().scene.layers[0].id;
-  st.setLayerMode(lid, 'halftone');
-  st.setConstParam(lid, 'image', URL_A);
+  // The source is a scene property, so the panel is there whatever the layer is doing —
+  // that is what "load the picture once, then treat it however" means.
+  ok('the Source panel shows even in generative mode', render().includes('Source'));
+  st.setSource(URL_A);
   ok('an image source shows no Source time slider', !render().includes('Source time'));
-  st.setConstParam(lid, 'image', 'video:1');
+  st.setSource('video:1');
   ok('a video source shows it', render().includes('Source time'));
   st.setLayerMode(lid, 'ascii');
-  ok('and in ascii mode too', render().includes('Source time'));
+  ok('and it is unaffected by the layer\'s mode', render().includes('Source time'));
+  // Honesty check: a picture loaded while nothing screens it must say so rather than
+  // implying it is being used.
+  st.setLayerMode(lid, 'generative');
+  ok('a source no visible layer reads says so', render().includes('No visible layer reads it'));
+  st.setLayerMode(lid, 'halftone');
+  ok('...and names the mode screening it once one does', render().includes('Screened by: Halftone'));
   st.reset();
 }
 
@@ -284,6 +318,7 @@ function sceneOf(bg: string | null): Scene {
   return {
     ...base,
     background: bg,
+    source: { image: null, srcTime: konst(0) },
     layers: [
       {
         id: 'L',
@@ -438,23 +473,26 @@ sec('store behaviour');
   st.reset();
   const lid = useStudio.getState().scene.layers[0].id;
   st.setLayerMode(lid, 'ascii');
-  st.setConstParam(lid, 'image', URL_A);
-  st.setConstParam(lid, 'srcTime', 4.5);
+  st.setSource(URL_A);
+  st.setConstParam(SCENE_LAYER, 'srcTime', 4.5, 'scene');
   st.setLayerMode(lid, 'halftone');
-  const img = useStudio.getState().scene.layers[0].params.image;
-  ok('ascii -> halftone carries the image over',
-    img !== undefined && (img as { value?: unknown }).value === URL_A);
-  // Where you are in a clip belongs to the source, so a trim must survive a mode switch.
-  ok('...and carries the clip offset with it',
-    (useStudio.getState().scene.layers[0].params.srcTime as { value?: unknown })?.value === 4.5);
+  // Not "carried over" any more — there is nothing to carry. One source, on the scene,
+  // and a mode switch cannot reach it.
+  ok('a mode switch leaves the scene source alone',
+    useStudio.getState().scene.source.image === URL_A);
+  ok('...and the clip offset with it',
+    (useStudio.getState().scene.source.srcTime as { value?: unknown }).value === 4.5);
+  ok('no copy of it is left in the layer params',
+    !('image' in useStudio.getState().scene.layers[0].params) &&
+      !('srcTime' in useStudio.getState().scene.layers[0].params));
 
   st.setMorphMode(lid, 'ascii');
   const m = useStudio.getState().scene.layers[0].morph;
-  ok('morph target inherits the image too',
-    !!m && (m.params.image as { value?: unknown }).value === URL_A);
+  ok('a morph target holds no source of its own either',
+    !!m && !('image' in m.params) && !('srcTime' in m.params));
   st.setMorphMode(lid, null);
 
-  const before = JSON.stringify(useStudio.getState().scene.layers[0].params.image);
+  const before = useStudio.getState().scene.source.image;
   const beforeAll = JSON.stringify(useStudio.getState().scene.layers[0].params);
   st.surprise();
   // Compared against the params it replaced, NOT against the mode defaults. Checking
@@ -464,8 +502,7 @@ sec('store behaviour');
   // real failure and is vanishingly unlikely by chance.
   ok('surprise changes halftone params',
     JSON.stringify(useStudio.getState().scene.layers[0].params) !== beforeAll);
-  ok('surprise leaves the image alone',
-    JSON.stringify(useStudio.getState().scene.layers[0].params.image) === before);
+  ok('surprise leaves the source alone', useStudio.getState().scene.source.image === before);
 
   st.reset();
   ok('reset restores the default generative scene',
@@ -485,6 +522,44 @@ sec('timeline rows for halftone params');
   const out = render();
   ok('timeline labels the rows, not raw keys',
     out.includes('Cell size') && out.includes('Algorithm') && !/>cell</.test(out));
+  st.reset();
+}
+
+sec('timeline: the scene source is its own track, not a layer\'s');
+{
+  // The clip offset belongs to the composition, so it gets a Scene group above the layers.
+  // Filing it under a layer would say retiming the clip only moves that layer's picture.
+  const st = useStudio.getState();
+  st.reset();
+  st.setSource('video:1');
+  ok('a constant offset has no track', !render().includes('Source time</span>'));
+
+  st.toggleParamAnimated(SCENE_LAYER, 'srcTime', 0, 'scene');
+  const p = useStudio.getState().scene.source.srcTime;
+  ok('the scene param becomes keyframed', (p as { kind: string }).kind === 'keys');
+  const html2 = render();
+  ok('the timeline grows a Scene group', html2.includes('· Scene'));
+  ok('...holding the Source time track', html2.includes('Source time'));
+  ok('...and the "nothing animated yet" copy is gone', !html2.includes('Nothing animated yet'));
+
+  // The easing inspector looks a layer up from the selection; a scene track has no layer,
+  // so an inspector that insisted on one would leave these keyframes uneditable.
+  st.upsertKeyframe(SCENE_LAYER, 'srcTime', 2, 3, 'scene');
+  st.selectTimeline({ kind: 'key', layerId: SCENE_LAYER, slot: 'scene', param: 'srcTime', index: 0 });
+  const html3 = render();
+  ok('the easing inspector opens on it', html3.includes('keyframe 1 of 2'));
+  ok('...and names the track rather than the raw key', html3.includes('Source time'));
+
+  // Editing through the generic actions must land on the scene, not silently no-op.
+  st.setKeyframeHold(SCENE_LAYER, 'scene', 'srcTime', 0, true);
+  const keys = (useStudio.getState().scene.source.srcTime as { keys: { hold?: boolean }[] }).keys;
+  ok('a scene keyframe can be held', keys[0].hold === true);
+  st.deleteKeyframe(SCENE_LAYER, 'scene', 'srcTime', 1);
+  st.deleteKeyframe(SCENE_LAYER, 'scene', 'srcTime', 0);
+  ok('deleting the last one collapses back to a constant',
+    (useStudio.getState().scene.source.srcTime as { kind: string }).kind === 'const');
+  ok('the source itself is untouched by all of that',
+    useStudio.getState().scene.source.image === 'video:1');
   st.reset();
 }
 
@@ -622,21 +697,61 @@ sec('REGRESSION: wide pixel runs are clipped to the spawn zone, not point-tested
 
 sec('REGRESSION: switching modes must not resurrect a stale image');
 {
+  // v1 kept the picture in the layer's params and the per-layer mode cache remembered a
+  // whole param set, so a round trip through a mode could bring back a picture from three
+  // switches ago. The scene-level source removes the possibility — this keeps it removed.
   const st = useStudio.getState();
   st.reset();
   const lid = useStudio.getState().scene.layers[0].id;
-  const val = () =>
-    (useStudio.getState().scene.layers[0].params.image as { value?: unknown } | undefined)?.value;
+  const val = () => useStudio.getState().scene.source.image;
   st.setLayerMode(lid, 'halftone');
-  st.setConstParam(lid, 'image', 'AAA');
+  st.setSource('AAA');
   st.setLayerMode(lid, 'ascii');
-  ok('the image follows the layer into the new mode', val() === 'AAA');
-  st.setConstParam(lid, 'image', 'BBB'); // replace it while in ascii
+  ok('the source survives a mode switch', val() === 'AAA');
+  st.setSource('BBB'); // replace it while in ascii
   st.setLayerMode(lid, 'halftone');
-  ok('switching back keeps the NEWER image, not the one halftone remembered',
+  ok('switching back keeps the NEWER source, not one a mode remembered',
     val() === 'BBB', String(val()));
   st.setLayerMode(lid, 'ascii');
   ok('and forward again still keeps it', val() === 'BBB', String(val()));
+  // The mode cache can no longer hold a picture at all, which is also what stops it
+  // pinning megabytes of data URL for the life of the tab.
+  ok('the remembered param sets carry no source',
+    !JSON.stringify(useStudio.getState().scene.layers[0].params).includes('BBB'));
+  st.reset();
+}
+
+sec('REGRESSION: a version-1 project keeps its picture (the source moved)');
+{
+  // v1 wrote the source into each layer's params. Loading one must hoist it, not drop it —
+  // silently losing the uploaded photo on the next visit is the worst outcome here.
+  const st = useStudio.getState();
+  st.reset();
+  const v1 = JSON.parse(JSON.stringify(useStudio.getState().scene)) as Record<string, unknown>;
+  delete v1.source;
+  (v1.layers as Record<string, unknown>[])[0].mode = 'halftone';
+  (v1.layers as { params: Record<string, unknown> }[])[0].params = {
+    ...(v1.layers as { params: Record<string, unknown> }[])[0].params,
+    image: { kind: 'const', value: 'video:5' },
+    srcTime: { kind: 'const', value: 1.25 },
+  };
+  st.loadProject({
+    format: 'glyph-grid-studio',
+    version: 1,
+    name: 'Old comp',
+    savedAt: 0,
+    scene: v1 as unknown as Scene,
+    clips: [{ ref: 'video:5', name: 'old.mp4', width: 640, height: 360, duration: 3 }],
+  });
+  const after = useStudio.getState().scene;
+  ok('the source is hoisted onto the scene', after.source.image === 'video:5');
+  ok('...with its clip offset',
+    (after.source.srcTime as { value?: unknown }).value === 1.25);
+  ok('...and stripped from the layer, so it cannot ride along in every future save',
+    !('image' in after.layers[0].params) && !('srcTime' in after.layers[0].params));
+  // The whole point of reserving refs: the alert has to be able to name the file.
+  ok('the migrated scene still reports the clip it needs',
+    missingClips(after, useStudio.getState().clips, () => false)[0]?.name === 'old.mp4');
   st.reset();
 }
 
@@ -653,7 +768,7 @@ async function asyncChecks(): Promise<void> {
     ok('a scene with no source settles at once', await settleSources(useStudio.getState().scene, 0));
 
     st.setLayerMode(lid, 'halftone');
-    st.setConstParam(lid, 'image', 'video:404');
+    st.setSource('video:404');
     // A dead ref is not pending, so this must return promptly rather than burn the retry
     // budget: an export of a scene whose clip is gone should finish, not hang.
     ok('a scene whose clip is gone still settles (no hang)',
@@ -901,7 +1016,7 @@ sec('project: a clip that cannot come back is named, not hidden');
   st.reset();
   const lid = useStudio.getState().scene.layers[0].id;
   st.setLayerMode(lid, 'halftone');
-  st.setConstParam(lid, 'image', 'video:2');
+  st.setSource('video:2');
 
   const info: VideoInfo = { ref: 'video:2', name: 'beach-walk.mp4', width: 1920, height: 1080, duration: 12.4 };
   const doc = makeProject('Clip comp', useStudio.getState().scene, () => info, 0);
@@ -940,7 +1055,7 @@ sec('project: what gets written is what can be reopened');
   st.reset();
   const lid = useStudio.getState().scene.layers[0].id;
   st.setLayerMode(lid, 'halftone');
-  st.setConstParam(lid, 'image', 'video:2');
+  st.setSource('video:2');
   st.setProjectName('Round trip');
 
   const doc = currentDoc();

@@ -1,7 +1,7 @@
 /**
  * Source sampling — the front door for every mode that reads pixels.
  *
- * A still image (a data URL in the layer's `image` param) is decoded once and sampled
+ * A still image (a data URL in `scene.source.image`) is decoded once and sampled
  * to a cols×rows luminance+rgb+alpha grid, cached forever: there are only a handful of
  * grid sizes and the picture never changes. A video (`video:1`, see `videoSource.ts`)
  * needs decode-on-demand and eviction, so it lives next door and is reached through the

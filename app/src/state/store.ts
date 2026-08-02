@@ -17,7 +17,7 @@ import {
 import type { EaseHalf } from '../domain/easing';
 import { frameAt, frameCount, timeOfFrame } from '../domain/timeline';
 import { defaultScene } from '../domain/defaults';
-import { remapClipRef, type ClipManifest, type ProjectDoc } from '../domain/project';
+import { migrateScene, remapClipRef, type ClipManifest, type ProjectDoc } from '../domain/project';
 import type { Layer, LayerMorph, MorphStyle, Scene, SpawnZone } from '../domain/scene';
 import { getMode } from '../engine/modes';
 import { onSourceReady, setFidelity } from '../engine/sourceReady';
@@ -25,11 +25,18 @@ import { clearVideoFrames } from '../engine/videoSource';
 import { parseGlyphs } from '../lib/glyphs';
 
 /**
- * Where a param lives on a layer. Every keyframe/animation action takes a slot, so
- * the timeline can drive the base mode, the morph target, and layer-level props
- * (opacity) through one set of actions.
+ * Where a param lives. Every keyframe/animation action takes a slot, so the timeline
+ * can drive the base mode, the morph target, layer-level props (opacity) and the
+ * scene's own params through one set of actions.
+ *
+ * `'scene'` belongs to the document rather than to any layer, so actions called with it
+ * ignore their `layerId` — pass `SCENE_LAYER`.
  */
-export type Slot = 'base' | 'morph' | 'layer';
+export type Slot = 'base' | 'morph' | 'layer' | 'scene';
+
+/** The `layerId` to pass alongside `slot: 'scene'`. Nothing reads it; naming it keeps
+    the call sites from looking like a bug. */
+export const SCENE_LAYER = '';
 
 /** What the timeline has selected — drives the easing inspector. */
 export type TimelineSel =
@@ -124,6 +131,9 @@ interface StudioState {
 
   setLayerMode: (layerId: string, mode: string) => void;
   setSpawn: (layerId: string, spawn: SpawnZone) => void;
+  /** Load (or clear) the composition's source. One per scene — every mode that screens
+      pixels reads this one. */
+  setSource: (image: string | null) => void;
   setBackground: (bg: string | null) => void;
   setCanvasSize: (width: number, height: number) => void;
   setDuration: (d: number) => void;
@@ -138,11 +148,37 @@ interface StudioState {
   surprise: () => void;
 }
 
-/** Read a param out of the slot it lives in. */
-export function readParam(layer: Layer, slot: Slot, key: string): Param<unknown> | undefined {
+/**
+ * Read a param out of the slot it lives in — LAYER slots only.
+ *
+ * Deliberately not exported: it answers `undefined` for the scene slot, which reads as
+ * "no such param" rather than "wrong function", and a caller holding a selection cannot
+ * tell those apart. `readSlotParam` is the entry point; this is its layer half.
+ */
+function readParam(layer: Layer, slot: Slot, key: string): Param<unknown> | undefined {
+  if (slot === 'scene') return undefined;
   if (slot === 'layer') return key === 'opacity' ? (layer.opacity as Param<unknown>) : undefined;
   if (slot === 'morph') return layer.morph?.params[key];
   return layer.params[key];
+}
+
+/** The scene's own animatable params. `image` is deliberately absent: one source per
+    composition means it is a plain value, not a track. */
+function readSceneParam(scene: Scene, key: string): Param<unknown> | undefined {
+  return key === 'srcTime' ? (scene.source.srcTime as Param<unknown>) : undefined;
+}
+
+/** Read a param from any slot. The one entry point for callers that hold a scene and a
+    slot rather than a layer — the timeline, the easing inspector, every control. */
+export function readSlotParam(
+  scene: Scene,
+  layerId: string,
+  slot: Slot,
+  key: string,
+): Param<unknown> | undefined {
+  if (slot === 'scene') return readSceneParam(scene, key);
+  const layer = scene.layers.find((l) => l.id === layerId);
+  return layer ? readParam(layer, slot, key) : undefined;
 }
 
 /**
@@ -154,6 +190,7 @@ export function readParam(layer: Layer, slot: Slot, key: string): Param<unknown>
  */
 export function resolveSlotParams(layer: Layer, slot: Slot, t: number): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  if (slot === 'scene') return out; // scene params have no schema panel of their own
   const src = slot === 'morph' ? layer.morph?.params : layer.params;
   if (src) for (const [k, p] of Object.entries(src)) out[k] = resolveParam(p, t);
   if (slot === 'layer') out.opacity = resolveParam(layer.opacity, t);
@@ -172,7 +209,7 @@ function writeParam(layer: Layer, slot: Slot, key: string, p: Param<unknown>): L
   return { ...layer, params: { ...layer.params, [key]: p } };
 }
 
-/** Return a new scene with one layer param transformed by fn. */
+/** Return a new scene with one param transformed by fn, wherever it lives. */
 function withParam(
   scene: Scene,
   layerId: string,
@@ -180,6 +217,11 @@ function withParam(
   key: string,
   fn: (p: Param<unknown>) => Param<unknown>,
 ): Scene {
+  if (slot === 'scene') {
+    const cur = readSceneParam(scene, key);
+    if (!cur) return scene;
+    return { ...scene, source: { ...scene.source, srcTime: fn(cur) as Param<number> } };
+  }
   return {
     ...scene,
     layers: scene.layers.map((l) => {
@@ -233,13 +275,12 @@ function withMorph(scene: Scene, id: string, fn: (m: LayerMorph) => LayerMorph):
 
 /**
  * Params a new set inherits from the one it replaces, so switching or morphing a
- * layer's mode reads as the SAME artwork changing form rather than two unrelated
- * ones. `image` is included because otherwise flipping a layer from ASCII to
- * Halftone silently blanks the canvas and asks for the picture to be uploaded again —
- * and `srcTime` follows it, because where you are in a clip belongs to the source, not
- * to whichever mode is screening it.
+ * layer's mode reads as the SAME artwork changing form rather than two unrelated ones.
+ *
+ * The source is NOT in here, and no longer needs to be: it lives on the scene, so a mode
+ * switch cannot touch it. This list is now only the look — palette, type, seed.
  */
-const INHERITED_KEYS = ['palette', 'fontKey', 'weight', 'glyphs', 'seed', 'image', 'srcTime'];
+const INHERITED_KEYS = ['palette', 'fontKey', 'weight', 'glyphs', 'seed'];
 
 /** Copy the inherited params from `base` onto `params`. Keys the target set doesn't
     declare are skipped, so a mode never gains a param it doesn't understand. */
@@ -281,8 +322,8 @@ function recordNow(prev: Scene): void {
 
 /** Randomize the ACTIVE layer's look. Uses Math.random deliberately: these become
     `konst` param values in the document, they are not part of the render path (which
-    stays seeded and deterministic). Never touches `image` — losing the user's
-    picture is not a surprise anyone wants. */
+    stays seeded and deterministic). The source is out of reach by construction — it is
+    a scene property and this only writes layer params. */
 function surpriseScene(scene: Scene, activeLayerId: string): Scene {
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
   const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -350,7 +391,10 @@ export const useStudio = create<StudioState>((set, get) => ({
     // still find one that is already open.
     clearVideoFrames();
     set({
-      ...adoptScene(doc.scene),
+      // Migrated here rather than only in `parseProject`, because a restore reads the
+      // document straight out of IndexedDB and never passes through the file parser.
+      // It is idempotent, so a current document goes through untouched.
+      ...adoptScene(migrateScene(doc.scene)),
       projectId: opts?.id ?? newProjectId(),
       projectName: doc.name,
       restored: opts?.restored ?? false,
@@ -503,8 +547,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   addKeyframeAt: (layerId, slot, key, t) => {
     recordNow(get().scene);
     set((s) => {
-      const layer = s.scene.layers.find((l) => l.id === layerId);
-      const cur = layer && readParam(layer, slot, key);
+      const cur = readSlotParam(s.scene, layerId, slot, key);
       if (!cur) return {};
       const value = resolveParam(cur, t);
       const next = cur.kind === 'keys' ? withKeyframe(cur, t, value) : keyframed(value, t);
@@ -517,8 +560,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   dragKeyframe: (layerId, slot, key, index, t) => {
     scheduleRecord(get().scene);
     set((s) => {
-      const layer = s.scene.layers.find((l) => l.id === layerId);
-      const cur = layer && readParam(layer, slot, key);
+      const cur = readSlotParam(s.scene, layerId, slot, key);
       if (!cur || cur.kind !== 'keys') return {};
       const moved = moveKeyframe(cur, index, t);
       return {
@@ -651,6 +693,16 @@ export const useStudio = create<StudioState>((set, get) => ({
       future: [],
       scene: { ...s.scene, layers: s.scene.layers.map((l) => (l.id === layerId ? { ...l, spawn } : l)) },
     }));
+  },
+
+  setSource: (image) => {
+    const cur = get().scene;
+    if (cur.source.image === image) return;
+    // recordNow, not scheduleRecord: loading a picture is a discrete act, and it must be
+    // one undo step of its own rather than being folded into whatever slider was last
+    // dragged inside the debounce window.
+    recordNow(cur);
+    set((s) => ({ future: [], scene: { ...s.scene, source: { ...s.scene.source, image } } }));
   },
 
   setBackground: (bg) => {

@@ -861,53 +861,88 @@ sec('project: clip references');
     opacity: konst(1), blendMode: 'source-over', spawn: { kind: 'full' },
     params: {}, morph: null, ...over,
   });
-  const scene = (layers) => ({
-    width: 1920, height: 1080, fps: 25, duration: 4, background: '#fff', layers,
+  // v2 shape: ONE source on the scene, not one per layer.
+  const scene = (layers, source) => ({
+    width: 1920, height: 1080, fps: 25, duration: 4, background: '#fff',
+    source: source ?? { image: null, srcTime: konst(0) }, layers,
   });
+  const srcScene = (image, layers) => scene(layers ?? [layer({})], { image, srcTime: konst(0) });
 
   ok('a data URL is not a clip reference', !sources.isVideoRef('data:image/png;base64,AAA'));
   ok('a clip reference is', sources.isVideoRef('video:3'));
   ok('videoRefSeq reads the number', sources.videoRefSeq('video:12') === 12);
   ok('videoRefSeq rejects a non-ref rather than returning NaN', sources.videoRefSeq('data:x') === 0);
 
-  const withClip = scene([
-    layer({ params: { image: konst('video:2'), cell: konst(8) } }),
-    layer({ id: 'layer-2', params: { image: konst('data:image/png;base64,AAA') } }),
+  // Several layers, one source: the whole point of the move. The refs come off the scene,
+  // so no number of layers or morphs can add or hide one.
+  const withClip = srcScene('video:2', [
+    layer({ params: { cell: konst(8) } }),
+    layer({ id: 'layer-2', mode: 'ascii',
+      morph: { mode: 'halftone', params: {}, start: 1, end: 2,
+               style: 'dissolve', easeOut: 'cubic', easeIn: 'cubic' } }),
   ]);
-  ok('finds a clip and ignores an image', JSON.stringify(project.collectClipRefs(withClip)) === '["video:2"]');
-
-  // A keyed `image` is legal in the model, and a save that walked only the current value
-  // would write a file that renders a clip it never mentions.
-  const keyed = scene([layer({
-    params: { image: { kind: 'keys', keys: [
-      { t: 0, value: 'video:5', easeOut: 'cubic', easeIn: 'cubic' },
-      { t: 2, value: 'video:1', easeOut: 'cubic', easeIn: 'cubic' },
-    ] } },
-  })]);
-  ok('walks keyframe values, sorted and de-duplicated',
-    JSON.stringify(project.collectClipRefs(keyed)) === '["video:1","video:5"]');
-
-  const morphed = scene([layer({
-    params: { image: konst('video:1') },
-    morph: { mode: 'ascii', params: { image: konst('video:9') }, start: 1, end: 2,
-             style: 'dissolve', easeOut: 'cubic', easeIn: 'cubic' },
-  })]);
-  ok('walks the morph target too',
-    JSON.stringify(project.collectClipRefs(morphed)) === '["video:1","video:9"]');
+  ok('finds the scene clip once, however many layers screen it',
+    JSON.stringify(project.collectClipRefs(withClip)) === '["video:2"]');
+  ok('a still image is not reported as a clip',
+    project.collectClipRefs(srcScene('data:image/png;base64,AAA')).length === 0);
+  ok('no source at all reports nothing', project.collectClipRefs(scene([layer({})])).length === 0);
+  // A v1 scene has its ref down in a layer's params. collectClipRefs deliberately does NOT
+  // look there — `migrateScene` is what has to run first, and `applyProject` depends on it.
+  ok('a stale layer-level image is NOT mistaken for the scene source',
+    project.collectClipRefs(scene([layer({ params: { image: konst('video:7') } })])).length === 0);
 
   sec('project: re-linking rewrites the scene');
   {
     // Re-registering a file mints a NEW id, so a re-link can never be an assignment back
-    // onto the saved reference — it has to rewrite every mention of it.
-    const out = project.remapClipRef(morphed, 'video:9', 'video:20');
-    ok('the morph reference moved', out.layers[0].morph.params.image.value === 'video:20');
-    ok('the base reference is untouched', out.layers[0].params.image.value === 'video:1');
+    // onto the saved reference — it has to rewrite the scene.
+    const out = project.remapClipRef(withClip, 'video:2', 'video:20');
+    ok('the scene source moved', out.source.image === 'video:20');
+    ok('the layers are untouched', out.layers === withClip.layers);
     ok('nothing matched -> the same object back (no undo churn)',
-      project.remapClipRef(morphed, 'video:404', 'video:1') === morphed);
-    const k = project.remapClipRef(keyed, 'video:5', 'video:6');
-    ok('a keyed reference is rewritten in place',
-      k.layers[0].params.image.keys[0].value === 'video:6' &&
-      k.layers[0].params.image.keys[1].value === 'video:1');
+      project.remapClipRef(withClip, 'video:404', 'video:1') === withClip);
+    ok('re-linking to itself is also a no-op',
+      project.remapClipRef(withClip, 'video:2', 'video:2') === withClip);
+  }
+
+  sec('project: a version-1 file brings its source forward');
+  {
+    // v1 kept `image`/`srcTime` in every layer's params. Dropping them on load would lose
+    // the user's uploaded picture, which is the worst thing this loader could do.
+    const v1 = scene([
+      layer({ params: { image: konst('video:3'), srcTime: konst(2.5), cell: konst(8) } }),
+      layer({ id: 'layer-2', params: { image: konst('video:9') } }),
+    ]);
+    delete v1.source;
+    const up = project.migrateScene(v1);
+    ok('the source is hoisted onto the scene', up.source.image === 'video:3');
+    ok('...with its clip offset', up.source.srcTime.value === 2.5);
+    ok('...and is then findable as a clip reference',
+      JSON.stringify(project.collectClipRefs(up)) === '["video:3"]');
+    ok('the keys are stripped from every layer, not left to ride along in future saves',
+      up.layers.every((l) => !('image' in l.params) && !('srcTime' in l.params)));
+    ok('other params survive', up.layers[0].params.cell.value === 8);
+    // Bottom-up is paint order, so the first one found is the picture that was underneath.
+    ok('a file naming several sources takes the bottom layer\'s', up.source.image !== 'video:9');
+
+    const v1morph = scene([layer({
+      params: {},
+      morph: { mode: 'ascii', params: { image: konst('video:4'), srcTime: konst(1) },
+               start: 1, end: 2, style: 'dissolve', easeOut: 'cubic', easeIn: 'cubic' },
+    })]);
+    delete v1morph.source;
+    const upm = project.migrateScene(v1morph);
+    ok('a source that only existed on a morph target is found too', upm.source.image === 'video:4');
+    ok('...and stripped from the morph params', !('image' in upm.layers[0].morph.params));
+
+    const v1none = scene([layer({})]);
+    delete v1none.source;
+    ok('a v1 file with no source at all gets an empty one',
+      project.migrateScene(v1none).source.image === null);
+    ok('migrating is idempotent — a current scene passes through untouched',
+      project.migrateScene(withClip) === withClip);
+    ok('a v1 file loads through parseProject, source and all',
+      project.parseProject(JSON.stringify(
+        { format: 'glyph-grid-studio', version: 1, scene: v1 })).scene.source.image === 'video:3');
   }
 
   sec('project: save and reopen');

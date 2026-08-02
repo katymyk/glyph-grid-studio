@@ -86,16 +86,17 @@ functions into a Node script if needed.
 
 - `npm run typecheck` — `tsc -b`. Clean on a good tree, so any error is yours.
 - `npm run check:math` — compiles the **DOM-free** engine modules (`engine/halftone/*`,
-  `engine/tone.ts`, `engine/rng.ts`, `domain/params.ts`, `domain/project.ts`,
-  `domain/sources.ts`) with `tsc` and runs `scripts/check-halftone.cjs` under node: screen
-  geometry, tone mapping, dot-size response, the dither algorithms, the run merge,
-  determinism — plus the whole save/reopen surface (clip-reference collection including
-  keyframed values, the re-link rewrite, round-tripping, and every way a bad file is
-  refused). **Those files must stay DOM-free** or this stops working.
+  `engine/tone.ts`, `engine/rng.ts`, `domain/params.ts`, `domain/scene.ts`,
+  `domain/project.ts`, `domain/sources.ts`) with `tsc` and runs `scripts/check-halftone.cjs`
+  under node: screen geometry, tone mapping, dot-size response, the dither algorithms, the
+  run merge, determinism — plus the whole save/reopen surface (clip-reference collection,
+  the re-link rewrite, the version-1 → 2 source migration, round-tripping, and every way a
+  bad file is refused). **Those files must stay DOM-free** or this stops working.
 - `npm run check:smoke` — a Vite SSR build of `src/__smoke.tsx`, then `node`. This is
   the only headless way to catch runtime faults `tsc` cannot see: a panel dereferencing
   a param a mode doesn't declare, a mode-registry import cycle, conditional-control
-  visibility, and the painter/exporter behaviour for every placement shape. Video is
+  visibility, the scene-level source reaching every mode as context, the scene timeline
+  track and its easing inspector, and the painter/exporter behaviour for every shape. Video is
   covered here only as far as it can be without a browser: ref routing, the readiness
   probe's pending/not-pending contract, and clip frame timing (`clipMs` is exported
   purely because it is the one pure part). Decoding and seeking are not.
@@ -103,6 +104,29 @@ functions into a Node script if needed.
 Still browser-only, and worth doing by hand after engine changes: interactive latency
 while dragging sliders, and the six export buttons (especially transparent-background
 PNG/SVG and the GIF/MP4-on-white paths).
+
+### One source per composition (`domain/scene.ts`)
+
+The picture every mode screens lives on the **Scene**, not on a layer: `scene.source`
+is `{ image, srcTime }`, where `image` is a still's data URL or a `video:N` clip
+reference. One canvas, many treatments — you load a photo once and stack a halftone over
+an ASCII pass over a dither of the same frame.
+
+Three consequences worth knowing before you touch this:
+
+- **Modes receive the source as `ModeContext`, never as a param.** A mode that declared
+  `image` would be a second, stale copy, and a mode switch could resurrect it — the exact
+  bug this shape removes. `check:smoke` asserts no mode declares `image`/`srcTime`.
+- **`srcTime` is keyable through the `'scene'` slot.** `Slot` has a fourth member; actions
+  called with it ignore their `layerId` (pass `SCENE_LAYER`). That is what lets one set of
+  keyframe actions, one timeline row type and one easing inspector serve scene params too,
+  and why `readSlotParam(scene, layerId, slot, key)` — not `readParam(layer, …)` — is the
+  entry point for anything holding a selection.
+- **Version-1 files must be migrated, not read.** They kept `image`/`srcTime` in each
+  layer's params. `migrateScene()` hoists the bottom-most one and strips the keys; it runs
+  in `parseProject` (files), `loadProject` (any adoption) and `applyProject` — the last one
+  **before** `collectClipRefs`, because a v1 scene's clip ref is somewhere `collectClipRefs`
+  no longer looks, and reserving nothing is how a fresh upload steals a restored reference.
 
 ### Persistence (`state/persist.ts`, `lib/idb.ts`)
 
@@ -144,9 +168,7 @@ checks that matter, because each one has a plausible silent failure:
 6. Play at 6 / 12 / 25 fps and confirm the picture visibly *steps* at that rate and the frame
    readout increments by exactly one. Change fps mid-playback: the playhead must continue from
    the same second, not jump.
-7. Two layers on one clip at different `srcTime` — expect a console warning and a fall back
-   to seeking (slow but stable), not a stall.
-8. Firefox, which has no `requestVideoFrameCallback` — playback must still advance via the
+7. Firefox, which has no `requestVideoFrameCallback` — playback must still advance via the
    clip-clock fallback.
 
 Neither Safari nor Firefox can be automated here, so both MP4 negotiation and the rVFC

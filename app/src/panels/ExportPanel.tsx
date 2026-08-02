@@ -12,7 +12,7 @@ import { sceneToPNGBlob } from '../engine/export/png';
 import { gifButtonLabel, sceneToGIF } from '../engine/export/gif';
 import { sceneToSequence } from '../engine/export/sequence';
 import { MP4_UNSUPPORTED, mp4Supported, sceneToMP4 } from '../engine/export/mp4';
-import { settleSources } from '../engine/export/frames';
+import { settleSources, unsettledNote } from '../engine/export/frames';
 import styles from '../ui/ui.module.css';
 
 /** Above roughly this many elements, a vector export is slow to write, heavy to open,
@@ -67,38 +67,51 @@ export function ExportPanel() {
   const exSVG = () =>
     run('svg', async () => {
       if (!heavyOk('SVG')) return;
-      await settleSources(scene, playhead);
+      const settled = await settleSources(scene, playhead);
       download(new Blob([sceneToSVG(scene, playhead)], { type: 'image/svg+xml' }), 'glyph-grid.svg');
+      setNote(unsettledNote({ unsettled: settled ? 0 : 1, total: 1 }));
     });
   const exJSON = () =>
     run('json', async () => {
       if (!heavyOk('JSON')) return;
-      await settleSources(scene, playhead);
+      const settled = await settleSources(scene, playhead);
       download(new Blob([sceneToJSON(scene, playhead)], { type: 'application/json' }), 'glyph-grid.json');
+      setNote(unsettledNote({ unsettled: settled ? 0 : 1, total: 1 }));
     });
   const exPNG = () =>
     run('png', async () => download(await sceneToPNGBlob(scene, playhead, 2), 'glyph-grid@2x.png'));
 
+  // Every animated export reports how many frames it had to write without their real
+  // source data, and every one of them says so. Swallowing that is what let a video
+  // sequence come out with duplicated frames and look complete.
   const runGIF = () =>
-    run('gif', async (onProgress) =>
-      download(await sceneToGIF(scene, onProgress), `glyph-grid_${scene.fps}fps.gif`),
-    );
+    run('gif', async (onProgress) => {
+      const { blob, fidelity } = await sceneToGIF(scene, onProgress);
+      download(blob, `glyph-grid_${scene.fps}fps.gif`);
+      setNote(unsettledNote(fidelity));
+    });
   const runSeq = () =>
-    run('seq', async (onProgress) =>
-      download(await sceneToSequence(scene, onProgress), `glyph-sequence_${scene.fps}fps.zip`),
-    );
+    run('seq', async (onProgress) => {
+      const { blob, fidelity } = await sceneToSequence(scene, onProgress);
+      download(blob, `glyph-sequence_${scene.fps}fps.zip`);
+      setNote(unsettledNote(fidelity));
+    });
   const runMP4 = () =>
     run('mp4', async (onProgress) => {
-      const { blob, codec } = await sceneToMP4(scene, onProgress);
+      const { blob, codec, fidelity } = await sceneToMP4(scene, onProgress);
       // Name the codec when H.264 wasn't available. A silent HEVC-in-MP4 that Premiere
       // refuses to open is worse than a longer filename.
       const suffix = codec === 'avc' ? '' : `_${codec}`;
       download(blob, `glyph-grid_${scene.fps}fps${suffix}.mp4`);
+      const partial = unsettledNote(fidelity);
       if (codec !== 'avc') {
         setNote(
           `This browser could not encode H.264, so the file is ${codec.toUpperCase()}. It plays in ` +
-            `a browser, but some editors will not import it — use the PNG sequence if yours refuses.`,
+            `a browser, but some editors will not import it — use the PNG sequence if yours refuses.` +
+            (partial ? `\n\n${partial}` : ''),
         );
+      } else {
+        setNote(partial);
       }
     });
 
@@ -163,7 +176,19 @@ export function ExportPanel() {
           </p>
         )}
         {note && (
-          <p style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 8 }}>{note}</p>
+          // pre-line: an MP4 that both fell back a codec AND lost frames says both, as two
+          // paragraphs. Collapsing them runs the two facts into one sentence.
+          <p
+            style={{
+              fontSize: 10.5,
+              color: 'var(--muted)',
+              lineHeight: 1.5,
+              marginTop: 8,
+              whiteSpace: 'pre-line',
+            }}
+          >
+            {note}
+          </p>
         )}
         {error && (
           // whiteSpace: the MP4 failure message is one line per attempted configuration,

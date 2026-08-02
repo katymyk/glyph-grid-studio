@@ -22,8 +22,35 @@ import { beginSourceProbe, setFidelity, sourcePending, waitForSourceReady } from
  */
 const MAX_ROUNDS = 24;
 
-/** Did every source deliver, or did we give up? Reported so callers can say so. */
+/** Did every source deliver, or did we give up? Reported so callers can say so.
+    Every animated exporter counts the falses and hands the total back — a frame written
+    without its real source data is a duplicate in the file, and a duplicate nobody
+    mentions is indistinguishable from a broken export. */
 export type Settled = boolean;
+
+/**
+ * How many frames an export had to write without their real source data.
+ *
+ * Zero on every ordinary export. Non-zero only when a source never arrived within the
+ * readiness budget — a clip whose decoder gave up, or a file that was removed mid-export.
+ * It exists to be SHOWN: the alternative is a zip that looks complete and quietly repeats
+ * frames, which is exactly the bug that made video exports untrustworthy.
+ */
+export interface ExportFidelity {
+  unsettled: number;
+  total: number;
+}
+
+/** Human sentence for a partial export, or null when everything landed. */
+export function unsettledNote(f: ExportFidelity): string | null {
+  if (f.unsettled <= 0) return null;
+  const n = f.unsettled;
+  return (
+    `${n} of ${f.total} frame${f.total === 1 ? '' : 's'} could not be read from the source in ` +
+    `time, so ${n === 1 ? 'it repeats' : 'they repeat'} the frame before. This usually means the ` +
+    `video decoder fell behind — re-export, or use a shorter clip or a smaller canvas.`
+  );
+}
 
 /**
  * Paint `scene` at `t`, repainting until no source is still pending.

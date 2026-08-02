@@ -2,7 +2,7 @@ import GIF from 'gif.js';
 import workerUrl from 'gif.js/dist/gif.worker.js?url';
 import type { Scene } from '../../domain/scene';
 import { frameCount } from '../../domain/timeline';
-import { paintSettled } from './frames';
+import { paintSettled, type ExportFidelity } from './frames';
 
 /**
  * Longest side of a GIF export, in px.
@@ -62,7 +62,10 @@ export function gifButtonLabel(scene: {
 
 /** Render the scene across one loop into an animated GIF. Frame times step by 1/fps.
     The worker is bundled + same-origin (via ?url), so no cross-origin worker issue. */
-export async function sceneToGIF(scene: Scene, onProgress?: (p: number) => void): Promise<Blob> {
+export async function sceneToGIF(
+  scene: Scene,
+  onProgress?: (p: number) => void,
+): Promise<{ blob: Blob; fidelity: ExportFidelity }> {
   const fps = scene.fps || 25;
   const total = frameCount(scene);
   const delay = Math.round(1000 / fps);
@@ -89,8 +92,9 @@ export async function sceneToGIF(scene: Scene, onProgress?: (p: number) => void)
   const startedAt = performance.now();
   // paintSettled, not paintScene: a video frame still seeking (or an image still
   // decoding) would otherwise be encoded as a blank or a duplicate.
+  let unsettled = 0;
   for (let f = 0; f < total; f++) {
-    await paintSettled(ctx, scene, f / fps);
+    if (!(await paintSettled(ctx, scene, f / fps)).settled) unsettled++;
     // GIF has no alpha channel here: gif.js is configured without a transparent
     // index, so it reads raw RGBA and quantizes fully-transparent pixels (0,0,0,0)
     // to black. Compositing the frame over white keeps a transparent-background
@@ -107,7 +111,7 @@ export async function sceneToGIF(scene: Scene, onProgress?: (p: number) => void)
   }
   const capturedAt = performance.now();
 
-  return await new Promise<Blob>((resolve) => {
+  const blob = await new Promise<Blob>((resolve) => {
     gif.on('progress', (p) => onProgress?.(0.5 + p * 0.5)); // encode = second half
     gif.on('finished', (blob) => {
       // Logged so the next "GIF is slow" report arrives with its own measurements, and
@@ -121,4 +125,5 @@ export async function sceneToGIF(scene: Scene, onProgress?: (p: number) => void)
     });
     gif.render();
   });
+  return { blob, fidelity: { unsettled, total } };
 }

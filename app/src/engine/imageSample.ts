@@ -11,10 +11,11 @@
  * `engine/tone.ts`, never baked in here, so tone sliders never invalidate the cache.
  */
 import { markSourcePending, notifySourceReady } from './sourceReady';
-import { sampleDrawable, type Sample } from './sampleGrid';
+import { gridId, sampleDrawable, type Sample, type SampleGrid } from './sampleGrid';
 import { isVideoRef, sampleVideoFrame } from './videoSource';
 
-export type { Sample } from './sampleGrid';
+export type { Sample, SampleGrid } from './sampleGrid';
+export { gridFor } from './sampleGrid';
 
 const imgCache = new Map<string, HTMLImageElement>();
 const sampleCache = new Map<string, Sample>();
@@ -41,13 +42,13 @@ function urlId(u: string): number {
 }
 
 /**
- * Get the sample for (image, cols, rows). Returns null while the image is still
- * decoding (a repaint is triggered via the onSourceReady callbacks when it lands).
+ * Get the sample for (image, grid). Returns null while the image is still decoding (a
+ * repaint is triggered via the onSourceReady callbacks when it lands).
  */
-export function getSample(dataUrl: string, cols: number, rows: number): Sample | null {
+export function getSample(dataUrl: string, grid: SampleGrid): Sample | null {
   // Cache first: a hit needs no decoded image at all, which is what lets a caller
   // supply a sample directly (see primeSample).
-  const key = `${cols}x${rows}@${urlId(dataUrl)}`;
+  const key = `${gridId(grid)}@${urlId(dataUrl)}`;
   const hit = sampleCache.get(key);
   if (hit) return hit;
 
@@ -67,7 +68,7 @@ export function getSample(dataUrl: string, cols: number, rows: number): Sample |
     }
     return null;
   }
-  const s = sampleDrawable(img, img.width, img.height, cols, rows);
+  const s = sampleDrawable(img, img.width, img.height, grid);
   sampleCache.set(key, s);
   return s;
 }
@@ -78,8 +79,11 @@ export function getSample(dataUrl: string, cols: number, rows: number): Sample |
  * The counterpart to `primeImage` one level up: that supplies a decoded image for this
  * module to downscale, this supplies the downscaled result directly.
  */
-export function primeSample(source: string, sample: Sample): void {
-  sampleCache.set(`${sample.cols}x${sample.rows}@${urlId(source)}`, sample);
+export function primeSample(source: string, sample: Sample, aspect: number): void {
+  sampleCache.set(
+    `${gridId({ cols: sample.cols, rows: sample.rows, aspect })}@${urlId(source)}`,
+    sample,
+  );
 }
 
 /**
@@ -91,6 +95,9 @@ export function primeSample(source: string, sample: Sample): void {
  * frame and the preview and every exported frame request identical data. `fps` comes
  * along because the video branch has to turn that index back into a clip position.
  *
+ * Build `grid` with `gridFor(cols, rows, ctx.width, ctx.height)` — the canvas dimensions
+ * are not optional decoration, they are what the crop is taken against (`SampleGrid`).
+ *
  * A still image ignores both, which is why it costs nothing.
  *
  * Not-ready is a normal outcome, for either kind. The contract:
@@ -101,12 +108,11 @@ export function primeSample(source: string, sample: Sample): void {
  */
 export function sampleSource(
   source: string | null,
-  cols: number,
-  rows: number,
+  grid: SampleGrid,
   frame: number,
   fps: number,
 ): Sample | null {
   if (!source) return null;
-  if (isVideoRef(source)) return sampleVideoFrame(source, cols, rows, frame, fps);
-  return getSample(source, cols, rows);
+  if (isVideoRef(source)) return sampleVideoFrame(source, grid, frame, fps);
+  return getSample(source, grid);
 }

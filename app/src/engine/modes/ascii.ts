@@ -2,7 +2,7 @@ import { konst, type Param } from '../../domain/params';
 import type { Placement } from '../../domain/scene';
 import { buildCells } from '../cells';
 import { fontStack } from '../fonts';
-import { sampleSource } from '../imageSample';
+import { gridFor, sampleSource } from '../imageSample';
 import { inkFromLum } from '../tone';
 import type { ModeContext, RenderMode } from './types';
 
@@ -88,7 +88,11 @@ export const asciiMode: RenderMode = {
     // Quantise to a frame so the preview and every exported frame ask the source for
     // identical data. Inert for stills; how a video source is addressed.
     const frame = Math.round((ctx.time + ctx.srcTime) * (ctx.fps || 25));
-    const sample = sampleSource(ctx.source, p.cols, p.rows, frame, ctx.fps || 25);
+    // One sample cell per character cell, cropped to the CANVAS shape. cols/rows is the
+    // character density and is free to be any ratio — passing it as the crop aspect is what
+    // stretched every picture whose canvas wasn't 16:9 (80×45 happens to be exactly 16:9).
+    const grid = gridFor(p.cols, p.rows, ctx.width, ctx.height);
+    const sample = sampleSource(ctx.source, grid, frame, ctx.fps || 25);
     if (!sample) return []; // still decoding — repaint fires when ready
     const font = fontStack(p.fontKey);
     const cells = buildCells(p.cols, p.rows, ctx.width, ctx.height, p.seed);

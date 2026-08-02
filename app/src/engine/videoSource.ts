@@ -24,7 +24,7 @@
  */
 import { VIDEO_REF_PREFIX, videoRefSeq } from '../domain/sources';
 import { fidelity, markSourcePending, notifySourceReady, onFidelityChange } from './sourceReady';
-import { sampleBytes, sampleDrawable, type Sample } from './sampleGrid';
+import { gridId, sampleBytes, sampleDrawable, type Sample, type SampleGrid } from './sampleGrid';
 
 /** Re-exported so the many callers that ask "is this a clip?" keep one import site,
     while the fact itself lives in the DOM-free domain layer (project saving needs it). */
@@ -42,8 +42,7 @@ export interface VideoInfo {
 /** One outstanding frame request. `frame`/`fps` rather than a time, so read-ahead can
     step by whole frames and land on the same cache keys the renderer asks for. */
 interface Wanted {
-  cols: number;
-  rows: number;
+  grid: SampleGrid;
   frame: number;
   fps: number;
 }
@@ -174,9 +173,8 @@ let frameBytes = 0;
     grid stays alive so the canvas has something to show. */
 const held = new Map<string, Sample>();
 
-const gridKey = (ref: string, cols: number, rows: number) => `${ref}#${cols}x${rows}`;
-const frameKey = (ref: string, cols: number, rows: number, ms: number) =>
-  `${gridKey(ref, cols, rows)}#${ms}`;
+const gridKey = (ref: string, g: SampleGrid) => `${ref}#${gridId(g)}`;
+const frameKey = (ref: string, g: SampleGrid, ms: number) => `${gridKey(ref, g)}#${ms}`;
 
 function cacheGet(k: string): Sample | undefined {
   const hit = frames.get(k);
@@ -253,8 +251,7 @@ export function clipMs(info: VideoInfo, frame: number, fps: number): number {
  */
 export function sampleVideoFrame(
   ref: string,
-  cols: number,
-  rows: number,
+  grid: SampleGrid,
   frame: number,
   fps: number,
 ): Sample | null {
@@ -264,23 +261,23 @@ export function sampleVideoFrame(
   if (!e) return null;
 
   const ms = clipMs(e.info, frame, fps);
-  const gk = gridKey(ref, cols, rows);
+  const gk = gridKey(ref, grid);
 
   // Playing: sample whatever the element is showing. Started lazily here rather than from
   // the regime listener so a clip no layer is rendering never spins up a decoder.
   if (fidelity() === 'live' && !e.liveDisabled) {
     if (!e.live) startLive(e);
-    if (e.live) return liveSample(e, e.live, gk, cols, rows, ms, fps);
+    if (e.live) return liveSample(e, e.live, gk, grid, ms, fps);
   }
 
-  const hit = cacheGet(frameKey(ref, cols, rows, ms));
+  const hit = cacheGet(frameKey(ref, grid, ms));
   if (hit) {
     held.set(gk, hit);
     return hit;
   }
 
   markSourcePending(); // this frame is not the one that was asked for
-  request(e, { cols, rows, frame, fps });
+  request(e, { grid, frame, fps });
   return held.get(gk) ?? null;
 }
 
@@ -397,8 +394,7 @@ function liveSample(
   e: Entry,
   L: LiveState,
   gk: string,
-  cols: number,
-  rows: number,
+  grid: SampleGrid,
   wantMs: number,
   fps: number,
 ): Sample | null {
@@ -413,7 +409,7 @@ function liveSample(
   // The `!held.has(gk)` clause covers a cold start and a cleared cache; two layers at
   // different grids each need their own downscale of the same presented frame.
   if ((L.sampledMark.get(gk) !== mark || !held.has(gk)) && e.el.videoWidth > 0) {
-    held.set(gk, sampleDrawable(e.el, e.el.videoWidth, e.el.videoHeight, cols, rows));
+    held.set(gk, sampleDrawable(e.el, e.el.videoWidth, e.el.videoHeight, grid));
     L.sampledMark.set(gk, mark);
   }
   // No markSourcePending() and no notifySourceReady(): during playback this IS the frame,
@@ -463,7 +459,11 @@ const MAX_WANTED = 6;
 
 function request(e: Entry, w: Wanted): void {
   const ms = clipMs(e.info, w.frame, w.fps);
-  if (e.wanted.some((q) => q.cols === w.cols && q.rows === w.rows && clipMs(e.info, q.frame, q.fps) === ms)) {
+  if (
+    e.wanted.some(
+      (q) => gridId(q.grid) === gridId(w.grid) && clipMs(e.info, q.frame, q.fps) === ms,
+    )
+  ) {
     return;
   }
   e.wanted.push(w);
@@ -484,8 +484,8 @@ function nextReadAhead(e: Entry): Wanted | null {
   for (let i = 1; i <= READ_AHEAD; i++) {
     const frame = l.frame + i;
     const ms = clipMs(e.info, frame, l.fps);
-    if (!frames.has(frameKey(e.info.ref, l.cols, l.rows, ms))) {
-      return { cols: l.cols, rows: l.rows, frame, fps: l.fps };
+    if (!frames.has(frameKey(e.info.ref, l.grid, ms))) {
+      return { grid: l.grid, frame, fps: l.fps };
     }
   }
   return null;
@@ -513,26 +513,45 @@ async function pump(e: Entry): Promise<void> {
   }
 }
 
+/**
+ * Decode one requested frame into the cache.
+ *
+ * **An explicit request ALWAYS ends in a notification** — that invariant is what the
+ * `finally` is for, and it is load-bearing rather than tidy. Read-ahead deliberately stays
+ * silent (it runs only when nobody is waiting, so a notification would buy a repaint
+ * nobody asked for), and the two used to interact badly:
+ *
+ *   read-ahead decodes frame f+1 → an export asks for f+1 and queues a request →
+ *   read-ahead's decode lands, silently → the pump pops the request, finds the frame
+ *   already cached, and returns without a word → nobody ever tells the waiter.
+ *
+ * The export then sat out the full readiness timeout and wrote the PREVIOUS frame into the
+ * file. A sequence export on a cold cache came out with duplicated frames every few
+ * frames, eight seconds apart, and nothing logged it. The same silence covered every path
+ * that produces no data (a dropped seek, a decoder that returned nothing): those must
+ * notify too, so the caller gets a prompt retry instead of a stall.
+ */
 async function serve(e: Entry, w: Wanted, notify: boolean): Promise<void> {
   const ms = clipMs(e.info, w.frame, w.fps);
-  const k = frameKey(e.info.ref, w.cols, w.rows, ms);
-  if (frames.has(k)) return;
-  const gen = e.generation;
+  const k = frameKey(e.info.ref, w.grid, ms);
   try {
-    await seekTo(e.el, ms / 1000);
-    // Playback may have started during the seek, which moves the element off this position.
-    // Sampling now would cache a LATER frame under this frame's key and poison the exact
-    // cache for the rest of the session — invisible until someone compares an export
-    // against the canvas.
-    if (e.generation !== gen) return;
-    if (!(e.el.videoWidth > 0)) return;
-    cachePut(k, sampleDrawable(e.el, e.el.videoWidth, e.el.videoHeight, w.cols, w.rows));
-  } catch {
-    return; // a dropped seek costs one frame, never the pump
+    if (frames.has(k)) return; // already decoded — by read-ahead, or by an earlier ask
+    const gen = e.generation;
+    try {
+      await seekTo(e.el, ms / 1000);
+      // Playback may have started during the seek, which moves the element off this
+      // position. Sampling now would cache a LATER frame under this frame's key and poison
+      // the exact cache for the rest of the session — invisible until someone compares an
+      // export against the canvas.
+      if (e.generation !== gen) return;
+      if (!(e.el.videoWidth > 0)) return;
+      cachePut(k, sampleDrawable(e.el, e.el.videoWidth, e.el.videoHeight, w.grid));
+    } catch {
+      return; // a dropped seek costs one frame, never the pump
+    }
+  } finally {
+    if (notify) notifySourceReady();
   }
-  // Read-ahead deliberately stays silent: it only runs when nothing is waiting, so a
-  // notification would buy a repaint nobody asked for.
-  if (notify) notifySourceReady();
 }
 
 // ------------------------------------------------------------------ seeking

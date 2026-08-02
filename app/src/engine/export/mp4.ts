@@ -21,7 +21,7 @@
 import type { BufferTarget, CanvasSource, Output, VideoCodec } from 'mediabunny';
 import type { Scene } from '../../domain/scene';
 import { frameCount } from '../../domain/timeline';
-import { paintSettled } from './frames';
+import { paintSettled, type ExportFidelity } from './frames';
 
 /** One rung of the encode ladder; everything else about the encode is fixed. */
 export type Mp4Attempt = {
@@ -97,7 +97,7 @@ export function mp4FailureMessage(failures: readonly Mp4Failure[]): string {
   );
 }
 
-export type Mp4Export = { blob: Blob; codec: VideoCodec };
+export type Mp4Export = { blob: Blob; codec: VideoCodec; fidelity: ExportFidelity };
 
 /** Composite the frame over white. H.264 carries no alpha, so a transparent scene would
     encode its fully-transparent pixels as black and invert the artwork. Same choice as
@@ -138,7 +138,7 @@ export async function sceneToMP4(
   // into a VideoFrame rather than taking it over, and nothing on the failure path draws
   // here — so a rejected rung costs a muxer header and nothing else, and the ladder never
   // re-renders the animation.
-  await paintSettled(ctx, scene, 0);
+  let unsettled = (await paintSettled(ctx, scene, 0)).settled ? 0 : 1;
   overWhite(ctx, scene);
 
   /**
@@ -205,7 +205,7 @@ export async function sceneToMP4(
 
   try {
     for (let f = 1; f < total; f++) {
-      await paintSettled(ctx, scene, f / fps);
+      if (!(await paintSettled(ctx, scene, f / fps)).settled) unsettled++;
       overWhite(ctx, scene);
       // Awaited: this is the encoder's backpressure signal. Without it a long export
       // queues every frame at once and runs the tab out of memory.
@@ -224,5 +224,5 @@ export async function sceneToMP4(
   onProgress?.(1);
   const buf = target.buffer;
   if (!buf) throw new Error('MP4 encoding produced no data.');
-  return { blob: new Blob([buf], { type: 'video/mp4' }), codec };
+  return { blob: new Blob([buf], { type: 'video/mp4' }), codec, fidelity: { unsettled, total } };
 }

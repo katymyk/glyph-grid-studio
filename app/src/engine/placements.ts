@@ -1,7 +1,7 @@
 import { resolveParam, type Param } from '../domain/params';
 import { isGlyph, morphProgress, type Layer, type MorphStyle, type Placement, type Scene, type SpawnZone } from '../domain/scene';
 import { getMode } from './modes';
-import { getSample } from './imageSample';
+import { getSample, gridFor } from './imageSample';
 
 export interface ResolvedLayer {
   opacity: number;
@@ -23,7 +23,7 @@ function applySpawn(spawn: SpawnZone | undefined, placements: Placement[], W: nu
   if (!src) return placements; // no mask yet — don't filter
   const cols = 200;
   const rows = Math.max(1, Math.round((200 * H) / W));
-  const sample = getSample(src, cols, rows);
+  const sample = getSample(src, gridFor(cols, rows, W, H));
   if (!sample) return placements; // decoding; repaint refilters when ready
 
   const inside = (x: number, y: number): boolean => {

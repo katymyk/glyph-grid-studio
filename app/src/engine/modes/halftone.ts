@@ -6,7 +6,7 @@ import { buildDither } from '../halftone/runs';
 import { effectiveCell, effectivePixelSize, type Lattice } from '../halftone/screen';
 import type { SizeMap } from '../halftone/sizeMap';
 import type { DitherAlgo } from '../halftone/dither';
-import { sampleSource } from '../imageSample';
+import { gridFor, sampleSource } from '../imageSample';
 import { inkThreshold, type ToneOpts } from '../tone';
 import type { ModeContext, RenderMode } from './types';
 
@@ -188,7 +188,7 @@ export const halftoneMode: RenderMode = {
       // One working grid per (image, canvas size): `cell` and `angle` are the params
       // people animate, and the sample cache is keyed by grid size, so a resolution
       // that tracked `cell` would re-downscale the source on most frames of a keyframe.
-      const field = sampleSource(ctx.source, workingWidth(W), workingHeight(W, H), frame, fps);
+      const field = sampleSource(ctx.source, gridFor(workingWidth(W), workingHeight(W, H), W, H), frame, fps);
       if (!field) return []; // still decoding — a repaint fires when it lands
       return buildDots(field, W, H, {
         cell: effectiveCell(W, H, Math.max(1, p.cell), p.lattice, p.maxElements),
@@ -213,8 +213,7 @@ export const halftoneMode: RenderMode = {
     const px = effectivePixelSize(W, H, Math.max(1, p.pixel), p.maxElements);
     const field = sampleSource(
       ctx.source,
-      Math.max(2, Math.round(W / px)),
-      Math.max(2, Math.round(H / px)),
+      gridFor(Math.max(2, Math.round(W / px)), Math.max(2, Math.round(H / px)), W, H),
       frame,
       fps,
     );

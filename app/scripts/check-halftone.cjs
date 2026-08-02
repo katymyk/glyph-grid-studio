@@ -425,6 +425,65 @@ sec('V15 run merge is lossless and seamless');
     `${inkCells} ink cells -> ${dout.length} rects (${(inkCells / dout.length).toFixed(1)}x)`);
 }
 
+// ------------------------------------------------------------- cover crop
+sec('cover crop: a source keeps its proportions whatever grid samples it');
+{
+  const { coverCrop } = require(D + '/engine/cover.js');
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+
+  // THE invariant. The crop's aspect IS the target aspect, so squeezing it into any
+  // buffer and stretching that buffer back over a region of that aspect is shape-
+  // preserving. This is what a round thing staying round reduces to.
+  ok('the crop always has the target aspect', (() => {
+    for (const [sw, sh] of [[1600, 900], [1200, 900], [900, 1200], [1000, 1000], [3, 700]]) {
+      for (const aspect of [16 / 9, 4 / 3, 1, 3 / 4, 9 / 16, 2.39]) {
+        const c = coverCrop(sw, sh, aspect);
+        if (!near(c.sw / c.sh, aspect)) return false;
+      }
+    }
+    return true;
+  })());
+  ok('the crop stays inside the source and is centred', (() => {
+    for (const [sw, sh] of [[1600, 900], [1200, 900], [900, 1200]]) {
+      for (const aspect of [16 / 9, 4 / 3, 1, 3 / 4]) {
+        const c = coverCrop(sw, sh, aspect);
+        if (c.sx < -1e-9 || c.sy < -1e-9) return false;
+        if (c.sx + c.sw > sw + 1e-9 || c.sy + c.sh > sh + 1e-9) return false;
+        if (!near(c.sx, (sw - c.sw) / 2) || !near(c.sy, (sh - c.sh) / 2)) return false;
+      }
+    }
+    return true;
+  })());
+  ok('matching aspect crops nothing at all', (() => {
+    const c = coverCrop(1200, 900, 4 / 3);
+    return near(c.sx, 0) && near(c.sy, 0) && near(c.sw, 1200) && near(c.sh, 900);
+  })());
+  // Cover, not contain: it fills the target and loses the overhang, never letterboxes.
+  ok('a wide source loses its sides, keeping full height', (() => {
+    const c = coverCrop(1600, 900, 1);
+    return near(c.sh, 900) && near(c.sw, 900) && near(c.sx, 350);
+  })());
+  ok('a tall source loses top and bottom, keeping full width', (() => {
+    const c = coverCrop(900, 1200, 1);
+    return near(c.sw, 900) && near(c.sh, 900) && near(c.sy, 150);
+  })());
+  // THE REGRESSION. ASCII sampled at 80x45 onto a 4:3 canvas used to crop against
+  // 80/45 = 16:9 and stretch what survived by 1.33x. The buffer's own shape must have
+  // no influence: only the canvas aspect it will be drawn across.
+  ok('the sample buffer resolution has no say in the crop', (() => {
+    const a = coverCrop(1200, 900, 4 / 3); // canvas is 4:3 ...
+    const b = coverCrop(1200, 900, 4 / 3); // ... whether sampled at 80x45 or 400x300
+    return JSON.stringify(a) === JSON.stringify(b) && near(a.sh, 900);
+  })());
+  ok('a nonsense aspect falls back to the source shape rather than NaN', (() => {
+    for (const bad of [0, -2, NaN, Infinity]) {
+      const c = coverCrop(1200, 900, bad);
+      if (!near(c.sw, 1200) || !near(c.sh, 900)) return false;
+    }
+    return true;
+  })());
+}
+
 // ------------------------------------------------------------- V16 params
 sec('V16 keyframed string params step monotonically (no overshoot flip-flop)');
 {

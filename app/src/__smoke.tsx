@@ -13,7 +13,7 @@ import { paintScene } from './engine/paint';
 import { sceneToSVG } from './engine/export/svg';
 import { sceneToJSON } from './engine/export/json';
 import { konst } from './domain/params';
-import { primeImage, primeSample, sampleSource } from './engine/imageSample';
+import { gridFor, primeImage, primeSample, sampleSource } from './engine/imageSample';
 import { beginSourceProbe, fidelity, sourcePending } from './engine/sourceReady';
 import {
   clipMs,
@@ -23,7 +23,7 @@ import {
   videoInfo,
   type VideoInfo,
 } from './engine/videoSource';
-import { paintSettled, settleSources } from './engine/export/frames';
+import { paintSettled, settleSources, unsettledNote } from './engine/export/frames';
 import { gifButtonLabel, gifSize, gifWorkers } from './engine/export/gif';
 import { frameAt, frameCount, timeOfFrame } from './domain/timeline';
 import { makeProject, missingClips, parseProject } from './domain/project';
@@ -168,7 +168,8 @@ ok('an uncapped cell is not labelled capped', !readoutText(html).includes('cappe
 // ------------------------------------------------------------------- with art
 sec('the no-source path (actual pixel sampling needs a browser)');
 const URL_A = 'data:image/png;base64,STUB';
-ok('sampleSource(null) is null, not a throw', sampleSource(null, 8, 8, 0, 25) === null);
+const G = gridFor(8, 8, 16, 9);
+ok('sampleSource(null) is null, not a throw', sampleSource(null, G, 0, 25) === null);
 ok('halftone with no source yields no placements, whatever the algo', (() => {
   for (const algo of ['halftone', 'floyd', 'atkinson', 'bayer4', 'bayer8', 'noise']) {
     const got = getMode('halftone').placements(
@@ -213,18 +214,18 @@ sec('video refs (decoding needs a browser; routing and timing do not)');
 ok('a video ref is recognised, a data URL is not',
   isVideoRef('video:1') && !isVideoRef(URL_A) && !isVideoRef(null) && !isVideoRef(7));
 ok('an unregistered ref samples to null rather than throwing',
-  sampleSource('video:404', 8, 8, 0, 25) === null);
+  sampleSource('video:404', G, 0, 25) === null);
 // If a dead ref counted as pending, every export would spin out its retry budget on a
 // clip that is never coming back.
 ok('an unregistered ref is NOT pending (an export must not wait for it forever)', (() => {
   beginSourceProbe();
-  sampleSource('video:404', 8, 8, 0, 25);
+  sampleSource('video:404', G, 0, 25);
   return sourcePending() === 0;
 })());
 ok('an undecoded image IS pending (an export must wait for it)', (() => {
   beginSourceProbe();
   try {
-    sampleSource('data:image/png;base64,NOTDECODED', 8, 8, 0, 25);
+    sampleSource('data:image/png;base64,NOTDECODED', G, 0, 25);
   } catch {
     // node has no `Image` to kick the decode off with. Irrelevant to what is being
     // asserted: pending is raised BEFORE any decode work, which is the contract — an
@@ -235,9 +236,10 @@ ok('an undecoded image IS pending (an export must wait for it)', (() => {
 ok('a primed sample is a hit, so it is not pending', (() => {
   const g = { cols: 4, rows: 4, lum: new Float32Array(16), rgb: new Uint8ClampedArray(48),
     alpha: new Uint8ClampedArray(16).fill(255) };
-  primeSample('primed://x', g);
+  const g4 = gridFor(4, 4, 16, 9);
+  primeSample('primed://x', g, g4.aspect);
   beginSourceProbe();
-  const got = sampleSource('primed://x', 4, 4, 0, 25);
+  const got = sampleSource('primed://x', g4, 0, 25);
   return got === g && sourcePending() === 0;
 })());
 ok('videoInfo on an unknown ref is null', videoInfo('video:404') === null);
@@ -680,7 +682,7 @@ sec('REGRESSION: wide pixel runs are clipped to the spawn zone, not point-tested
   for (let r = 0; r < half.rows; r++) {
     for (let c = 0; c < half.cols; c++) half.lum[r * half.cols + c] = c < half.cols / 2 ? 1 : 0;
   }
-  primeSample(maskUrl, half);
+  primeSample(maskUrl, half, W / base.height);
   const masked = {
     ...base,
     layers: [{ ...base.layers[0], spawn: { kind: 'image' as const, image: maskUrl, invert: false } }],
@@ -807,6 +809,24 @@ async function asyncChecks(): Promise<void> {
     ok('stepping a frame is exact (a stepped frame must be the real one)', fidelity() === 'exact');
     ok('stepping also stopped playback', useStudio.getState().playing === false);
     st.reset();
+  }
+
+    sec('a partial export says so instead of looking complete');
+  {
+    // The bug this guards: every animated exporter used to await paintSettled and throw
+    // the answer away, so a frame written without its real source data became a silent
+    // duplicate in a file with the right frame count. Nothing could tell you.
+    ok('a clean export says nothing', unsettledNote({ unsettled: 0, total: 40 }) === null);
+    const one = unsettledNote({ unsettled: 1, total: 40 }) ?? '';
+    ok('one lost frame is reported with the count', one.includes('1 of 40'), one.slice(0, 40));
+    ok('...and says what the file actually contains', /repeats the frame before/.test(one));
+    const many = unsettledNote({ unsettled: 7, total: 40 }) ?? '';
+    ok('several read as plural', many.includes('7 of 40') && many.includes('they repeat'));
+    ok('it suggests something to do about it', /re-export|smaller canvas|shorter clip/.test(many));
+    ok('a single-frame export reads correctly too',
+      (unsettledNote({ unsettled: 1, total: 1 }) ?? '').includes('1 of 1 frame '),
+      (unsettledNote({ unsettled: 1, total: 1 }) ?? '').slice(0, 30));
+    ok('no undefined leaks into the sentence', !many.includes('undefined'));
   }
 
   sec('MP4 export degrades honestly without WebCodecs');

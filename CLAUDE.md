@@ -86,12 +86,13 @@ functions into a Node script if needed.
 
 - `npm run typecheck` — `tsc -b`. Clean on a good tree, so any error is yours.
 - `npm run check:math` — compiles the **DOM-free** engine modules (`engine/halftone/*`,
-  `engine/tone.ts`, `engine/rng.ts`, `domain/params.ts`, `domain/scene.ts`,
-  `domain/project.ts`, `domain/sources.ts`) with `tsc` and runs `scripts/check-halftone.cjs`
-  under node: screen geometry, tone mapping, dot-size response, the dither algorithms, the
-  run merge, determinism — plus the whole save/reopen surface (clip-reference collection,
-  the re-link rewrite, the version-1 → 2 source migration, round-tripping, and every way a
-  bad file is refused). **Those files must stay DOM-free** or this stops working.
+  `engine/tone.ts`, `engine/rng.ts`, `engine/cover.ts`, `domain/params.ts`,
+  `domain/scene.ts`, `domain/project.ts`, `domain/sources.ts`) with `tsc` and runs
+  `scripts/check-halftone.cjs` under node: screen geometry, tone mapping, dot-size response,
+  the dither algorithms, the run merge, determinism, the cover-fit crop — plus the whole
+  save/reopen surface (clip-reference collection, the re-link rewrite, the version-1 → 2
+  source migration, round-tripping, and every way a bad file is refused).
+  **Those files must stay DOM-free** or this stops working.
 - `npm run check:smoke` — a Vite SSR build of `src/__smoke.tsx`, then `node`. This is
   the only headless way to catch runtime faults `tsc` cannot see: a panel dereferencing
   a param a mode doesn't declare, a mode-registry import cycle, conditional-control
@@ -104,6 +105,20 @@ functions into a Node script if needed.
 Still browser-only, and worth doing by hand after engine changes: interactive latency
 while dragging sliders, and the six export buttons (especially transparent-background
 PNG/SVG and the GIF/MP4-on-white paths).
+
+### Sampling a source: resolution is not shape (`engine/sampleGrid.ts`, `engine/cover.ts`)
+
+Every mode that reads pixels asks for a `SampleGrid`: `{ cols, rows, aspect }`. Build it
+with `gridFor(cols, rows, ctx.width, ctx.height)` — never by hand.
+
+`cols`/`rows` size the buffer; `aspect` is the width/height of the **canvas region** the
+buffer will be stretched across. They are separate because a mode samples at whatever
+resolution suits it — ASCII takes one cell per character, the dot screen uses a fixed
+working grid — so `cols/rows` is *not* the shape of the thing on screen. Cropping against
+`cols/rows` is a **silent** bug: ASCII's 80×45 default is 16:9 to the digit, so it looked
+right on an HD canvas and stretched the picture on every other one. `coverCrop` is split
+into its own DOM-free module so the invariant (the crop's aspect IS the target aspect) is
+checked headlessly rather than by eye.
 
 ### One source per composition (`domain/scene.ts`)
 
@@ -154,9 +169,15 @@ checks that matter, because each one has a plausible silent failure:
 
 1. Load a clip in Halftone. Step the playhead and confirm the art changes; step back and
    confirm the earlier frame returns exactly. (A seek that never lands looks like a still.)
+   The FIRST paint after a mode switch is allowed to differ: until the decoder answers, the
+   canvas shows what it has and repaints when the real frame lands. It converges by the
+   second visit, and exports never take the substitute.
 2. Export a PNG sequence and confirm the frames differ from each other. This is the
    decisive one: a broken `paintSettled` gives a zip with the right frame *count* and the
-   same picture in every file.
+   same picture in every file. Do it on a **cold** cache (fresh load, first export) — a
+   second export reads everything back from the frame cache and passes regardless. The
+   panel now also states how many frames it could not read in time; that line appearing
+   is itself a finding.
 3. Export MP4 and check the frame count is `fps × duration` and that it opens in a player.
    In Safari specifically — that path has no automated coverage at all (see below).
 4. Scrub fast, then let go — the canvas should lag and catch up, never blank or flicker.

@@ -249,11 +249,50 @@ export function newProjectId(): string {
  * *this session's* relationship to it: history, what's selected, where the playhead is.
  * Keeping the old undo stack would let one undo jump between two unrelated documents.
  */
-function adoptScene(scene: Scene): Pick<
+/**
+ * Give every layer the params its mode declares but the saved document predates.
+ *
+ * `withParam` refuses to write a key a layer doesn't already hold, which is deliberate —
+ * it is what stops a shared write from teaching a mode a param it has no idea what to do
+ * with. The cost lands on any control added AFTER a project was last saved: its param is
+ * absent, so the control is not merely showing a default, it is DEAD. It renders at the
+ * slider's minimum and every drag is dropped in silence. That is how the tonal cuts
+ * shipped — "cut darks is off and I can't turn it on" — and it would have happened again
+ * on the next control added.
+ *
+ * So a scene arriving from outside this session is topped up from the mode defaults on the
+ * way in, once, rather than being second-guessed at every read. Saved values always win;
+ * only absent keys are filled. Runs AFTER `migrateScene`, which needs to see the old keys
+ * before this fills in the ones that replaced them.
+ */
+function fillModeDefaults(scene: Scene): Scene {
+  const topUp = (mode: string, params: Record<string, Param<unknown>>) => {
+    let declared: Record<string, Param<unknown>>;
+    try {
+      declared = getMode(mode).defaultParams();
+    } catch {
+      return params; // a mode this build doesn't have — leave the layer exactly as saved
+    }
+    let out = params;
+    for (const [k, v] of Object.entries(declared)) if (!(k in out)) out = { ...out, [k]: v };
+    return out;
+  };
+  return {
+    ...scene,
+    layers: scene.layers.map((l) => ({
+      ...l,
+      params: topUp(l.mode, l.params),
+      morph: l.morph ? { ...l.morph, params: topUp(l.morph.mode, l.morph.params) } : l.morph,
+    })),
+  };
+}
+
+function adoptScene(raw: Scene): Pick<
   StudioState,
   'scene' | 'activeLayerId' | 'past' | 'future' | 'selection' | 'playhead' | 'playing'
 > {
   for (const k of Object.keys(modeParamsCache)) delete modeParamsCache[k];
+  const scene = fillModeDefaults(raw);
   return {
     scene,
     activeLayerId: scene.layers[0]?.id ?? 'layer-1',

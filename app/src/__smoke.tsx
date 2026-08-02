@@ -766,6 +766,42 @@ sec('REGRESSION: switching modes must not resurrect a stale image');
   st.reset();
 }
 
+sec('REGRESSION: a control added after a project was saved is not dead on arrival');
+{
+  // Reported as "cut darks is off and I can't turn it on". The saved layer predated the
+  // param, `withParam` refuses to write a key a layer doesn't hold, so the slider sat at
+  // its minimum and swallowed every drag. Nothing about it is specific to the cuts — it is
+  // every control added after any given save, so the check is stated that way.
+  const st = useStudio.getState();
+  st.reset();
+  const lid = useStudio.getState().scene.layers[0].id;
+  st.setLayerMode(lid, 'ascii');
+  const old = JSON.parse(JSON.stringify(useStudio.getState().scene)) as Scene;
+  const kept = old.layers[0].params as Record<string, unknown>;
+  delete kept.cutDarks; // the shape a project saved before the cuts existed comes back in
+  delete kept.cutLights;
+  st.loadProject({ format: 'glyph-grid-studio', version: 3, name: 'Older comp', savedAt: 0,
+    scene: old, clips: [] });
+
+  const params = () => useStudio.getState().scene.layers[0].params as Record<string, { value?: unknown }>;
+  ok('loading tops the layer up from its mode defaults', 'cutDarks' in params());
+  st.setConstParam(useStudio.getState().scene.layers[0].id, 'cutDarks', 45);
+  ok('...so the control actually writes instead of dropping the edit',
+    params().cutDarks?.value === 45);
+
+  // The general invariant, over every mode rather than the one that broke: after a scene
+  // is adopted, every param a mode declares exists on the layer, so no sidebar control can
+  // be pointing at nothing.
+  const missing: string[] = [];
+  for (const m of listModes()) {
+    st.setLayerMode(useStudio.getState().scene.layers[0].id, m.key);
+    const have = useStudio.getState().scene.layers[0].params;
+    for (const k of Object.keys(m.defaultParams())) if (!(k in have)) missing.push(`${m.key}.${k}`);
+  }
+  ok('every mode\'s declared params survive adoption', missing.length === 0, missing.join(', '));
+  st.reset();
+}
+
 sec('REGRESSION: a version-1 project keeps its picture (the source moved)');
 {
   // v1 wrote the source into each layer's params. Loading one must hoist it, not drop it —

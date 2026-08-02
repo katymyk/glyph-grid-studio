@@ -35,16 +35,25 @@ The default fonts are **ABC Diatype** and **ABC Diatype Mono** (Dinamo, commerci
 
 ## Usage
 
-No build step, no dependencies to install. It's a single HTML file.
+Open the [live link](https://katymyk.github.io/glyph-grid-studio/) — nothing to install.
 
-1. Open the [live link](https://YOUR-USERNAME.github.io/glyph-grid-studio/), **or**
-2. Download `index.html` and open it in any modern browser.
+To run it locally:
 
-The only external dependency is [JSZip](https://stuk.github.io/jszip/) (loaded from a CDN) for the PNG-sequence export.
+```bash
+cd app
+npm install
+npm run dev
+```
+
+## Two versions
+
+The live site is **v2**, the app in [`app/`](app/) — React + Vite, with layers, keyframes and a timeline. That's where the work happens.
+
+**v1** is still here as [`index.html`](index.html) at the repo root: the original single-file version, no build step and no dependencies to install. Download it and open it in any browser. It isn't deployed and doesn't get new features.
 
 ## Editing / contributing
 
-Everything lives in `index.html` — markup, styles, and logic in one file. Open it in a browser to preview; open it in an editor (or Claude Code) to change. See [`CLAUDE.md`](CLAUDE.md) for a map of the code.
+Work on v2 in [`app/`](app/) — `npm run dev` to preview, `npm run check` before you push. See [`CLAUDE.md`](CLAUDE.md) for a map of the code.
 
 ## License
 

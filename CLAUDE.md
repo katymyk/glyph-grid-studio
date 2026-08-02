@@ -4,9 +4,17 @@ Guidance for Claude Code (and any AI assistant) working in this repository.
 
 ## What this is
 
-Glyph Grid Studio — a single-file, client-side web tool for generating typographic
-and ASCII visuals on a fixed 1920×1080 canvas, with export to SVG (Figma), PNG,
-JSON, and PNG image sequences (After Effects). No backend, no build step.
+Glyph Grid Studio — a client-side web tool for generating typographic and ASCII visuals
+on a fixed 1920×1080 canvas, with export to SVG (Figma), PNG, JSON, and PNG image
+sequences (After Effects). No backend.
+
+It exists in two versions, and **`app/` (v2) is the one that ships**:
+
+- **v2 — `app/`.** React + Base UI + Vite, the layered/keyframed rewrite. This is what
+  GitHub Pages serves and where new work goes.
+- **v1 — `index.html`.** The original single-file tool, kept at the repo root. Still
+  runs by opening the file, no longer deployed, and not where features land. Touch it
+  only when asked for it by name.
 
 ## Project structure
 
@@ -15,13 +23,16 @@ JSON, and PNG image sequences (After Effects). No backend, no build step.
   and deployable as a static page with zero configuration.
 - `README.md` — user-facing description and setup.
 - `CLAUDE.md` — this file.
-- `.github/workflows/deploy.yml` — auto-publishes `index.html` to GitHub Pages on push to `main`.
+- `.github/workflows/deploy.yml` — builds `app/` and publishes it to GitHub Pages on push
+  to `main`. **The live site is v2.** The root `index.html` is kept as the v1 tool but is
+  no longer deployed — open it locally.
 
-There is **no package.json and no build tooling.** Do not add a bundler, framework,
-or transpiler unless explicitly asked — it would break the "open the file and it runs"
-guarantee that is the point of this project.
+**v1 has no package.json and no build tooling, and that is deliberate.** Don't add a
+bundler, framework, or transpiler to the root — it would break the "open the file and it
+runs" guarantee that is the point of v1. Build tooling belongs in `app/`, which has its
+own `package.json` and Vite config.
 
-## How the code is organized (inside index.html)
+## How the code is organized (inside index.html) — v1
 
 Read top to bottom; it's ordered deliberately.
 
@@ -206,5 +217,17 @@ or MP4 report comes in, ask for the console output first — it names the reason
 
 ## Deployment
 
-Push to `main` → the GitHub Actions workflow publishes to GitHub Pages automatically.
-Nothing to build. The live URL is `https://<username>.github.io/glyph-grid-studio/`.
+Push to `main` → the GitHub Actions workflow runs `npm ci && npm run build` in `app/` and
+publishes `app/dist` to GitHub Pages. The live URL is
+`https://<username>.github.io/glyph-grid-studio/`, and it serves **v2**.
+
+Two things keep that build working from a subpath; don't undo either:
+
+- **`base: './'` in `app/vite.config.ts`.** The emitted `index.html` references
+  `./assets/…`, so the same artifact works at a domain root or under
+  `/glyph-grid-studio/`. Setting an absolute `base` would hard-code the repo name.
+- **`app/package-lock.json` is committed.** `npm ci` requires it and fails without one.
+
+`npm run build` runs `tsc -b` first, so a type error fails the deploy rather than
+shipping. It does *not* run `check:math` or `check:smoke` — run `npm run check` yourself
+before pushing to `main`.

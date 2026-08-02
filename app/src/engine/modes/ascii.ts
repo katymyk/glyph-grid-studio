@@ -1,9 +1,9 @@
 import { konst, type Param } from '../../domain/params';
 import type { Placement } from '../../domain/scene';
-import { buildCells } from '../cells';
+import { buildCells, gridForCell } from '../cells';
 import { fontStack } from '../fonts';
 import { gridFor, sampleSource } from '../imageSample';
-import { inkFromLum } from '../tone';
+import { inkFromLum, keepsInk } from '../tone';
 import type { ModeContext, RenderMode } from './types';
 
 export interface AsciiParams {
@@ -12,10 +12,15 @@ export interface AsciiParams {
   useImgColors: boolean;
   contrast: number; // 20..300 (%)
   brightness: number; // -100..100
-  cols: number;
-  rows: number;
+  cutLights: number; // 0..100 — drop the palest cells
+  cutDarks: number; // 0..100 — drop the densest cells
+  /** Character cell in px. THE grid control: columns and rows are derived from it and
+      the canvas, so the grid can never be off the canvas's ratio. */
+  cell: number;
   density: number;
-  size: number;
+  /** Type size as a percentage of the cell, so resizing the cell rescales the type
+      with it instead of leaving the glyphs stranded at their old px. */
+  glyphScale: number;
   seed: number;
   fontKey: string;
   weight: string;
@@ -29,10 +34,11 @@ function asciiDefaults(): AsciiParams {
     useImgColors: false,
     contrast: 100,
     brightness: 0,
-    cols: 80,
-    rows: 45,
+    cutLights: 0,
+    cutDarks: 0,
+    cell: 24, // 80 × 45 on a 1920×1080 canvas — the grid this mode shipped with
     density: 100,
-    size: 16,
+    glyphScale: 67, // ≈16px in a 24px cell
     seed: 1,
     fontKey: 'mono',
     weight: '400',
@@ -40,11 +46,10 @@ function asciiDefaults(): AsciiParams {
   };
 }
 
-/** Luminance → ramp glyph. Tone lives in engine/tone.ts, shared with halftone mode,
+/** Ink demand → ramp glyph. Tone lives in engine/tone.ts, shared with halftone mode,
     so the same picture reads the same in both (and in a morph between them). */
-function rampChar(b: number, ramp: string, invert: boolean, contrast: number, brightness: number): string {
-  const t = inkFromLum(b, { contrast, brightness, invert });
-  let ri = Math.round(t * (ramp.length - 1));
+function rampChar(ink: number, ramp: string): string {
+  let ri = Math.round(ink * (ramp.length - 1));
   ri = ri < 0 ? 0 : ri > ramp.length - 1 ? ramp.length - 1 : ri;
   return ramp[ri];
 }
@@ -58,10 +63,11 @@ function read(r: Record<string, unknown>): AsciiParams {
     useImgColors: g('useImgColors', d.useImgColors),
     contrast: g('contrast', d.contrast),
     brightness: g('brightness', d.brightness),
-    cols: g('cols', d.cols),
-    rows: g('rows', d.rows),
+    cutLights: g('cutLights', d.cutLights),
+    cutDarks: g('cutDarks', d.cutDarks),
+    cell: g('cell', d.cell),
     density: g('density', d.density),
-    size: g('size', d.size),
+    glyphScale: g('glyphScale', d.glyphScale),
     seed: g('seed', d.seed),
     fontKey: g('fontKey', d.fontKey),
     weight: g('weight', d.weight),
@@ -88,24 +94,30 @@ export const asciiMode: RenderMode = {
     // Quantise to a frame so the preview and every exported frame ask the source for
     // identical data. Inert for stills; how a video source is addressed.
     const frame = Math.round((ctx.time + ctx.srcTime) * (ctx.fps || 25));
-    // One sample cell per character cell, cropped to the CANVAS shape. cols/rows is the
-    // character density and is free to be any ratio — passing it as the crop aspect is what
-    // stretched every picture whose canvas wasn't 16:9 (80×45 happens to be exactly 16:9).
-    const grid = gridFor(p.cols, p.rows, ctx.width, ctx.height);
+    const { cols, rows } = gridForCell(p.cell, ctx.width, ctx.height);
+    // One sample cell per character cell, cropped to the CANVAS shape — never to cols/rows.
+    // Deriving the grid from a cell size keeps those two nearly equal, but only to within
+    // the rounding to whole cells, and "nearly" is how the stretched-picture bug read: 80×45
+    // is exactly 16:9, so it looked right on an HD canvas and squashed every other one.
+    const grid = gridFor(cols, rows, ctx.width, ctx.height);
     const sample = sampleSource(ctx.source, grid, frame, ctx.fps || 25);
     if (!sample) return []; // still decoding — repaint fires when ready
     const font = fontStack(p.fontKey);
-    const cells = buildCells(p.cols, p.rows, ctx.width, ctx.height, p.seed);
+    const cells = buildCells(cols, rows, ctx.width, ctx.height, p.seed);
+    const size = (p.glyphScale / 100) * (ctx.height / rows);
+    const tone = { contrast: p.contrast, brightness: p.brightness, invert: p.invert };
     const out: Placement[] = [];
     for (const cell of cells) {
       if (cell.rFill * 100 >= p.density) continue;
       const idx = cell.r * sample.cols + cell.c;
-      const glyph = rampChar(sample.lum[idx], ramp, p.invert, p.contrast, p.brightness);
+      const ink = inkFromLum(sample.lum[idx], tone);
+      if (!keepsInk(ink, p.cutLights, p.cutDarks)) continue;
+      const glyph = rampChar(ink, ramp);
       if (glyph === ' ') continue;
       const color = p.useImgColors
         ? `rgb(${sample.rgb[idx * 3]},${sample.rgb[idx * 3 + 1]},${sample.rgb[idx * 3 + 2]})`
         : p.palette[Math.floor(cell.rColor * p.palette.length)] ?? '#000';
-      out.push({ x: cell.cx, y: cell.cy, size: p.size, glyph, color, rotation: 0, alpha: 1, weight: p.weight, font });
+      out.push({ x: cell.cx, y: cell.cy, size, glyph, color, rotation: 0, alpha: 1, weight: p.weight, font });
     }
     return out;
   },

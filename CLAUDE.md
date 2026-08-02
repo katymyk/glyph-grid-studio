@@ -120,6 +120,14 @@ right on an HD canvas and stretched the picture on every other one. `coverCrop` 
 into its own DOM-free module so the invariant (the crop's aspect IS the target aspect) is
 checked headlessly rather than by eye.
 
+ASCII no longer *has* a column and row count to get wrong: its grid comes from one **cell
+size** in px via `gridForCell(cell, W, H)` (`engine/cells.ts`, DOM-free and checked in
+`check:math`), and its type size is a percentage of that cell so resizing the cell rescales
+the glyphs with it. The grid is therefore always within half a cell of the canvas's ratio.
+Files that predate this carry `cols`/`rows`/`size` and are migrated on load — see the v2→3
+step in `domain/project.ts`, which touches ASCII layers ONLY: those three keys still mean
+what they always did in generative mode.
+
 ### One source per composition (`domain/scene.ts`)
 
 The picture every mode screens lives on the **Scene**, not on a layer: `scene.source`

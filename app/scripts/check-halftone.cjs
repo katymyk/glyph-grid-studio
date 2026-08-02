@@ -13,6 +13,7 @@
 const D = __dirname + '/../.check';
 const tone = require(D + '/engine/tone.js');
 const rng = require(D + '/engine/rng.js');
+const cells = require(D + '/engine/cells.js');
 const screen = require(D + '/engine/halftone/screen.js');
 const sizeMap = require(D + '/engine/halftone/sizeMap.js');
 const bayer = require(D + '/engine/halftone/bayer.js');
@@ -70,6 +71,51 @@ for (const b of [0, 0.2, 0.5, 0.77, 1]) for (const inv of [false, true]) {
   if (!near(tone.inkFromLum(b, { invert: inv }), want, 1e-12)) inkBad++;
 }
 ok('inkFromLum matches ascii rampChar polarity', inkBad === 0);
+
+sec('tonal cuts (ASCII: cut lights / cut darks)');
+{
+  const k = tone.keepsInk;
+  ok('no cuts keeps the whole range', [0, 0.001, 0.5, 0.999, 1].every((t) => k(t)));
+  ok('cut lights 30 drops everything paler', !k(0.29, 30) && !k(0, 30) && k(0.3, 30) && k(1, 30));
+  ok('cut darks 30 drops everything denser',
+    !k(0.71, 0, 30) && !k(1, 0, 30) && k(0.7, 0, 30) && k(0, 0, 30));
+  ok('both cuts leave a window in the middle',
+    !k(0.19, 20, 20) && k(0.2, 20, 20) && k(0.5, 20, 20) && k(0.8, 20, 20) && !k(0.81, 20, 20));
+  // Reachable one slider at a time, so it must be defined rather than clamped: cuts that
+  // cross leave nothing, which is empty artwork and not a crash or an inverted window.
+  ok('cuts that meet keep nothing', [0, 0.25, 0.5, 0.75, 1].every((t) => !k(t, 60, 60)));
+  ok('a full cut of one side keeps only the far end',
+    k(1, 100, 0) && !k(0.99, 100, 0) && k(0, 0, 100) && !k(0.01, 0, 100));
+}
+
+sec('ASCII grid from one cell size');
+{
+  const g = cells.gridForCell;
+  ok('24px on 1920x1080 is the 80x45 grid ASCII shipped with',
+    g(24, 1920, 1080).cols === 80 && g(24, 1920, 1080).rows === 45);
+  // The whole point of deriving the grid: the cells stay square on any canvas, so no
+  // cell-size setting can squash the picture the way a hand-set cols/rows pair could.
+  // The only slack is rounding to whole cells, which is bounded by half a cell on each
+  // axis — and is therefore only visible on a grid of a few cells (a 4-row grid rounds
+  // coarsely by definition). Both facts are asserted; the second is the one a user sees.
+  let worst = 0, worstBig = 0, overBound = 0;
+  for (const [W, H] of [[1920, 1080], [1080, 1350], [1000, 1000], [2560, 1080], [640, 480]])
+    for (let cell = 6; cell <= 120; cell++) {
+      const { cols, rows } = g(cell, W, H);
+      const err = Math.abs((W / cols) / (H / rows) - 1);
+      if (err > 0.5 / cols + 0.5 / rows + 1e-9) overBound++;
+      worst = Math.max(worst, err);
+      if (Math.min(cols, rows) >= 20) worstBig = Math.max(worstBig, err);
+    }
+  ok('never off square by more than the whole-cell rounding, on any canvas shape',
+    overBound === 0, `worst ${(worst * 100).toFixed(1)}% (coarsest grids)`);
+  ok('and within 3% on any grid of 20+ cells each way', worstBig < 0.03,
+    `worst ${(worstBig * 100).toFixed(2)}%`);
+  ok('a cell bigger than the canvas still leaves a grid to draw on',
+    g(4000, 1920, 1080).cols === 1 && g(4000, 1920, 1080).rows === 1);
+  ok('a nonsense cell size does not divide by zero',
+    g(0, 1920, 1080).cols === 1920 && g(-5, 1920, 1080).cols === 1920);
+}
 
 // ------------------------------------------------------------ V3-V5 sizeMap
 sec('V3-V5 coverage / dot size mapping');
@@ -1002,6 +1048,46 @@ sec('project: clip references');
     ok('a v1 file loads through parseProject, source and all',
       project.parseProject(JSON.stringify(
         { format: 'glyph-grid-studio', version: 1, scene: v1 })).scene.source.image === 'video:3');
+  }
+
+  sec('project: a version-2 ASCII grid becomes one cell size');
+  {
+    // v2 sized the grid as cols/rows with the type size in px. Losing that would reopen a
+    // saved comp at a different resolution to the one it was composed at.
+    const v2 = scene([layer({
+      mode: 'ascii',
+      params: { cols: konst(80), rows: konst(45), size: konst(16), ramp: konst(' .:#') },
+    })]);
+    const up = project.migrateScene(v2).layers[0].params;
+    ok('the cell size reproduces the saved column count', up.cell.value === 24);
+    ok('...and the glyph size becomes the same px as a share of it',
+      Math.abs(up.glyphScale.value - (16 / 24) * 100) < 1e-9);
+    ok('the old keys do not ride along in every future save',
+      !('cols' in up) && !('rows' in up) && !('size' in up));
+    ok('other params survive', up.ramp.value === ' .:#');
+
+    // Three dials became one, so an animated grid has no curve to carry across.
+    const keyed = scene([layer({
+      mode: 'ascii',
+      params: { cols: { kind: 'keys', keys: [{ t: 0, value: 40, ease: 'linear' },
+                                             { t: 2, value: 160, ease: 'linear' }] } },
+    })]);
+    ok('a keyframed grid collapses to its opening frame',
+      project.migrateScene(keyed).layers[0].params.cell.value === 48);
+
+    // The same keys still mean what they always did in generative mode.
+    const gen = scene([layer({ mode: 'generative', params: { cols: konst(20), size: konst(40) } })]);
+    ok('a generative layer is left alone', project.migrateScene(gen) === gen);
+
+    const morphed = scene([layer({
+      mode: 'halftone', params: { cell: konst(8) },
+      morph: { mode: 'ascii', params: { cols: konst(96), size: konst(20) }, start: 1, end: 2,
+               style: 'dissolve', easeOut: 'cubic', easeIn: 'cubic' },
+    })]);
+    const um = project.migrateScene(morphed).layers[0];
+    ok('an ASCII morph target migrates too', um.morph.params.cell.value === 20);
+    ok('...without disturbing the halftone base it hands over from',
+      um.params.cell.value === 8 && !('glyphScale' in um.params));
   }
 
   sec('project: save and reopen');

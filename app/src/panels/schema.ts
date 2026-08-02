@@ -1,11 +1,12 @@
 import { parseGlyphs } from '../lib/glyphs';
+import { gridForCell } from '../engine/cells';
 import {
   effectiveCell,
   effectivePixelSize,
   siteCount,
   type Lattice,
 } from '../engine/halftone/screen';
-import type { Control, PanelDef } from '../ui/controls/types';
+import type { Control, ControlScene, PanelDef } from '../ui/controls/types';
 
 /**
  * The clip offset, rendered by the Source panel (which shows it only when the source is
@@ -28,6 +29,10 @@ export const srcTimeControl: Control = {
   step: 0.05,
   format: (v) => `${v.toFixed(2)}s`,
 };
+
+/** A resolved param as a number, for the readouts. A param a mode doesn't declare
+    resolves to undefined, and NaN in a readout looks like a bug in the renderer. */
+const num = (v: unknown, f: number) => (typeof v === 'number' ? v : f);
 
 /**
  * Sidebar described as data. Reorder / relabel / regroup by editing these arrays;
@@ -86,10 +91,18 @@ const generativePanels: PanelDef[] = [
   },
 ];
 
+/** What one cell size works out to on this canvas. The grid is derived now, so the
+    column and row counts are a consequence the user can no longer read off a slider —
+    and a coarse ASCII is much easier to judge as "36 × 20" than as "54px". */
+function asciiGridReadout(p: Record<string, unknown>, scene: ControlScene): string {
+  const { cols, rows } = gridForCell(num(p.cell, 24), scene.width, scene.height);
+  return `${cols} × ${rows} · ${(cols * rows).toLocaleString('en-US')} cells`;
+}
+
 const asciiPanels: PanelDef[] = [
   {
-    id: 'ascii',
-    title: 'ASCII',
+    id: 'characters',
+    title: 'Characters',
     defaultOpen: true,
     controls: [
       { kind: 'text', param: 'ramp', label: 'Character ramp (light → dark)' },
@@ -105,10 +118,7 @@ const asciiPanels: PanelDef[] = [
           { label: 'dots', value: ' .·•●' },
         ],
       },
-      { kind: 'toggle', param: 'invert', label: 'Invert brightness' },
       { kind: 'toggle', param: 'useImgColors', label: 'Use image colors' },
-      { kind: 'slider', param: 'contrast', label: 'Contrast', min: 20, max: 300, format: (v) => `${(v / 100).toFixed(2)}×` },
-      { kind: 'slider', param: 'brightness', label: 'Brightness', min: -100, max: 100 },
     ],
   },
   {
@@ -116,10 +126,50 @@ const asciiPanels: PanelDef[] = [
     title: 'Grid',
     defaultOpen: true,
     controls: [
-      { kind: 'slider', param: 'cols', label: 'Columns', min: 8, max: 400 },
-      { kind: 'slider', param: 'rows', label: 'Rows', min: 6, max: 300 },
+      {
+        kind: 'slider',
+        param: 'cell',
+        label: 'Cell size',
+        min: 6,
+        max: 120,
+        format: (v) => `${Math.round(v)}px`,
+      },
+      { kind: 'readout', param: 'cell', label: 'Grid', compute: asciiGridReadout },
       { kind: 'slider', param: 'density', label: 'Cell fill', min: 1, max: 100, format: (v) => `${Math.round(v)}%` },
-      { kind: 'slider', param: 'size', label: 'Symbol size', min: 4, max: 80, format: (v) => `${Math.round(v)}px` },
+      {
+        kind: 'slider',
+        param: 'glyphScale',
+        label: 'Symbol size (of cell)',
+        min: 10,
+        max: 200,
+        format: (v) => `${Math.round(v)}%`,
+      },
+    ],
+  },
+  {
+    id: 'tone',
+    title: 'Image tone',
+    defaultOpen: true,
+    controls: [
+      { kind: 'slider', param: 'brightness', label: 'Brightness', min: -100, max: 100 },
+      { kind: 'slider', param: 'contrast', label: 'Contrast', min: 20, max: 300, format: (v) => `${(v / 100).toFixed(2)}×` },
+      { kind: 'toggle', param: 'invert', label: 'Invert brightness' },
+      {
+        kind: 'slider',
+        param: 'cutLights',
+        label: 'Cut lights (drop palest)',
+        min: 0,
+        max: 100,
+        format: (v) => (v <= 0 ? 'off' : `${Math.round(v)}%`),
+      },
+      {
+        kind: 'slider',
+        param: 'cutDarks',
+        label: 'Cut darks (drop densest)',
+        min: 0,
+        max: 100,
+        format: (v) => (v <= 0 ? 'off' : `${Math.round(v)}%`),
+      },
     ],
   },
 ];
@@ -132,8 +182,6 @@ const isDots = (p: Record<string, unknown>) => p.algo === 'halftone';
 const isDither = (p: Record<string, unknown>) => p.algo !== 'halftone';
 const isDiffusion = (p: Record<string, unknown>) => p.algo === 'floyd' || p.algo === 'atkinson';
 const isNoise = (p: Record<string, unknown>) => p.algo === 'noise';
-
-const num = (v: unknown, f: number) => (typeof v === 'number' ? v : f);
 
 /**
  * Disclose the element cap. Both the screen pitch and the dither cell get raised when

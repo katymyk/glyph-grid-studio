@@ -49,6 +49,21 @@ export function inkFromLum(lum: number, o: ToneOpts): number {
 }
 
 /**
+ * Tonal cuts: which ink levels get a mark at all.
+ *
+ * `cutLights` drops the palest end of the range, `cutDarks` the densest, each as a
+ * percentage of it. Unlike contrast and brightness these REMOVE marks rather than move
+ * them — cutting the lights clears a busy background back to bare paper, cutting the
+ * darks opens a shadow mass out into a silhouette. Both default to 0, which keeps
+ * everything. Cuts that meet leave nothing standing; that is a legal (if empty) setting,
+ * not something to clamp away, because it is reachable one slider at a time and reads
+ * as exactly what it is.
+ */
+export function keepsInk(ink: number, cutLights = 0, cutDarks = 0): boolean {
+  return ink >= cutLights / 100 && ink <= 1 - cutDarks / 100;
+}
+
+/**
  * The binary cut for the dither algorithms, in the same 0..1 domain. Kept separate
  * from `mapTone`'s threshold step because error diffusion needs the cut as a level to
  * compare against, not as an offset baked into the signal.

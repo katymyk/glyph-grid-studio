@@ -27,6 +27,7 @@ import { paintSettled, settleSources, unsettledNote } from './engine/export/fram
 import { gifButtonLabel, gifSize, gifWorkers } from './engine/export/gif';
 import { frameAt, frameCount, timeOfFrame } from './domain/timeline';
 import { makeProject, missingClips, parseProject } from './domain/project';
+import { panelsForMode } from './panels/schema';
 import { currentDoc } from './state/persist';
 import {
   mp4Supported,
@@ -92,6 +93,20 @@ ok('ascii and halftone declare readsSource; generative does not',
   getMode('ascii').readsSource === true &&
     getMode('halftone').readsSource === true &&
     !getMode('generative').readsSource);
+// A control bound to a param its mode doesn't declare is a dead input: it shows the
+// slider's minimum whatever the artwork is doing, and its first drag writes a param the
+// renderer never reads. That is exactly the litter a param rename leaves behind, so check
+// the whole sidebar against every mode rather than the one that was just edited.
+const orphanControls = listModes().flatMap((m) => {
+  const declared = m.defaultParams();
+  return panelsForMode(m.key)
+    .flatMap((p) => p.controls)
+    .filter((c) => !(c.param in declared))
+    .map((c) => `${m.key}.${c.param}`);
+});
+ok('every sidebar control binds to a param its mode declares',
+  orphanControls.length === 0, orphanControls.join(', '));
+
 ok('a fresh scene starts with an empty source',
   s().scene.source.image === null &&
     (s().scene.source.srcTime as { kind: string; value?: unknown }).value === 0);
@@ -164,6 +179,34 @@ ok('the default pixel size is not capped either', !readoutText(html).includes('c
 s().setConstParam(id, 'algo', 'halftone');
 html = render();
 ok('an uncapped cell is not labelled capped', !readoutText(html).includes('capped'));
+
+sec('the ASCII grid: one cell size, and the tonal cuts');
+{
+  s().setLayerMode(id, 'ascii');
+  const gridText = (h: string): string => {
+    const m = h.match(/Grid<\/span><span[^>]*>([^<]*)</);
+    return m ? m[1] : '';
+  };
+  let a = render();
+  // The grid is derived from the cell size now, so the counts are a consequence rather
+  // than something to drag — but a coarse ASCII is far easier to judge as "40 × 23" than
+  // as "48px", which is what the readout is for.
+  ok('the column and row sliders are gone', !a.includes('Columns') && !a.includes('Rows'));
+  ok('a cell-size slider replaces them', a.includes('Cell size'));
+  ok('the default cell still reads as the 80 × 45 grid ASCII shipped with',
+    gridText(a) === '80 × 45 · 3,600 cells', JSON.stringify(gridText(a)));
+  s().setConstParam(id, 'cell', 48);
+  a = render();
+  ok('a coarser cell reports the smaller grid', gridText(a) === '40 × 23 · 920 cells',
+    JSON.stringify(gridText(a)));
+  s().setConstParam(id, 'cell', 24);
+  ok('both tonal cuts are offered', render().includes('Cut lights') && render().includes('Cut darks'));
+  // Off by default, and off means off: a fresh ASCII layer must look exactly as it did
+  // before the cuts existed.
+  const d = getMode('ascii').defaultParams() as Record<string, { value?: unknown }>;
+  ok('...and both default to off', d.cutLights.value === 0 && d.cutDarks.value === 0);
+  s().setLayerMode(id, 'halftone');
+}
 
 // ------------------------------------------------------------------- with art
 sec('the no-source path (actual pixel sampling needs a browser)');

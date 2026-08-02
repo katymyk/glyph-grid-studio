@@ -18,6 +18,23 @@ export interface Cell {
   rPhase: number;
 }
 
+/**
+ * How many whole cells of `cell` px fit across a W×H canvas.
+ *
+ * ASCII sizes its grid this way — one number, "how big is a character cell" — rather
+ * than by a column and a row count, which have to be held in the canvas's ratio by hand
+ * or the picture squashes. Rounding to whole cells means the delivered pitch is up to
+ * half a pixel off what was asked for; the cells stay uniform and the grid stays exactly
+ * canvas-shaped, which matters more than hitting the request to the pixel.
+ */
+export function gridForCell(cell: number, width: number, height: number): { cols: number; rows: number } {
+  const px = cell > 0 ? cell : 1;
+  return {
+    cols: Math.max(1, Math.round(width / px)),
+    rows: Math.max(1, Math.round(height / px)),
+  };
+}
+
 export function buildCells(
   cols: number,
   rows: number,

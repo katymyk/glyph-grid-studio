@@ -24,7 +24,7 @@
  *
  * DOM-free on purpose: this is checked headlessly (`npm run check:math`).
  */
-import { konst, type Param } from './params';
+import { konst, resolveParam, type Param } from './params';
 import { defaultSource, type Scene, type SceneSource } from './scene';
 import { isVideoRef } from './sources';
 
@@ -32,9 +32,14 @@ import { isVideoRef } from './sources';
  * Bump when a change to `Scene` can't be read by the loader below.
  *
  * 2 — the source (`image` + `srcTime`) moved from every layer's params onto the scene.
- *     Version 1 files still load; `migrateScene` hoists them.
+ * 3 — ASCII's grid became one cell size (`cell` + `glyphScale`) instead of `cols`/`rows`
+ *     and an absolute glyph size.
+ *
+ * Every older file still loads: `migrateScene` runs each step in turn. The steps key off
+ * the SHAPE they find rather than off this number, because a file written before versions
+ * were recorded at all has to migrate too.
  */
-export const PROJECT_VERSION = 2;
+export const PROJECT_VERSION = 3;
 export const PROJECT_EXT = 'ggs';
 const FORMAT = 'glyph-grid-studio';
 
@@ -171,6 +176,11 @@ function asParam<T>(v: unknown, fallback: Param<T>): Param<T> {
   return fallback;
 }
 
+/** Bring a scene of any past shape forward, oldest step first. */
+export function migrateScene(scene: Scene): Scene {
+  return asciiCellGrid(hoistSource(scene));
+}
+
 /**
  * Bring a version-1 scene forward: the source moves from the layers onto the scene.
  *
@@ -183,7 +193,7 @@ function asParam<T>(v: unknown, fallback: Param<T>): Param<T> {
  * renderer (no mode reads them now) but they would ride along in every save forever, and
  * a stale `image` in a layer is a multi-megabyte data URL cloned onto the undo stack.
  */
-export function migrateScene(scene: Scene): Scene {
+function hoistSource(scene: Scene): Scene {
   if (scene.source) return scene;
   let source: SceneSource | null = null;
   const strip = (set: Record<string, Param<unknown>>): Record<string, Param<unknown>> => {
@@ -202,6 +212,60 @@ export function migrateScene(scene: Scene): Scene {
     morph: l.morph ? { ...l.morph, params: strip(l.morph.params) } : null,
   }));
   return { ...scene, source: source ?? defaultSource(), layers };
+}
+
+/** The value a param holds at the start of the scene, for a migration that has to reduce
+    an animated param to one number. Falsy/negative reads fall back — a saved grid of 0
+    columns is corrupt, not a layout to reproduce. */
+function atStart(p: Param<unknown> | undefined, fallback: number): number {
+  if (!p) return fallback;
+  const v = resolveParam(p, 0);
+  return typeof v === 'number' && v > 0 ? v : fallback;
+}
+
+/**
+ * Version-2 → 3: ASCII sized its grid with `cols`/`rows` and an absolute glyph `size`. It
+ * now takes one cell size in px, with the glyph size a percentage of it. Reproduce the
+ * saved layout on the canvas it was saved for rather than snapping the layer back to the
+ * default 24px grid.
+ *
+ * Two things a v2 file can say that v3 cannot, and what happens to them:
+ *
+ * - **A grid that wasn't the canvas's ratio.** Rows are now derived, so only one of the
+ *   pair can survive; columns do, because they set the horizontal detail you were looking
+ *   at. Such a scene comes back very slightly re-proportioned, which is the same squash
+ *   the single cell size exists to make unreachable.
+ * - **A keyframed grid.** Collapsed to its value at t=0. Three dials became one, so an
+ *   animated grid has no curve to carry across; keeping the opening frame and leaving it
+ *   to be re-keyed is the honest reading, and beats inventing motion.
+ *
+ * Only ASCII layers are touched. `cols`/`rows`/`size` still mean exactly what they always
+ * did in generative mode.
+ */
+function asciiCellGrid(scene: Scene): Scene {
+  const stale = (set: Record<string, Param<unknown>>) => 'cols' in set || 'rows' in set || 'size' in set;
+  const isAscii = (l: Scene['layers'][number]) =>
+    (l.mode === 'ascii' && stale(l.params)) || (l.morph?.mode === 'ascii' && stale(l.morph.params));
+  if (!scene.layers.some(isAscii)) return scene; // current file — hand back the same object
+
+  const fix = (set: Record<string, Param<unknown>>): Record<string, Param<unknown>> => {
+    if (!stale(set)) return set;
+    const { cols, rows: _rows, size, ...rest } = set;
+    const cell = atStart(rest.cell, scene.width / atStart(cols, 80));
+    return {
+      ...rest,
+      cell: konst(cell),
+      glyphScale: konst(rest.glyphScale ? atStart(rest.glyphScale, 67) : (atStart(size, 16) / cell) * 100),
+    };
+  };
+  return {
+    ...scene,
+    layers: scene.layers.map((l) => ({
+      ...l,
+      params: l.mode === 'ascii' ? fix(l.params) : l.params,
+      morph: l.morph?.mode === 'ascii' ? { ...l.morph, params: fix(l.morph.params) } : l.morph,
+    })),
+  };
 }
 
 function checkClips(v: unknown): ClipManifest[] {

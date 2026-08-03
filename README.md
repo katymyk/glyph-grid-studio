@@ -45,11 +45,11 @@ npm install
 npm run dev
 ```
 
-## Two versions
+## The older single-file version
 
-The live site is **v2**, the app in [`app/`](app/) — React + Vite, with layers, keyframes and a timeline. That's where the work happens.
+Before this, the whole tool was one self-contained `index.html` — no build step, nothing to install. It's no longer in the repo, but it isn't lost: it's kept at the tag [`v1-final`](https://github.com/katymyk/glyph-grid-studio/tree/v1-final), and you can [download that one file directly](https://raw.githubusercontent.com/katymyk/glyph-grid-studio/v1-final/index.html) and open it in any browser.
 
-**v1** is still here as [`index.html`](index.html) at the repo root: the original single-file version, no build step and no dependencies to install. Download it and open it in any browser. It isn't deployed and doesn't get new features.
+It doesn't get new features — everything now happens in [`app/`](app/).
 
 ## Editing / contributing
 

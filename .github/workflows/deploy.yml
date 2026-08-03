@@ -44,8 +44,8 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      # The v2 build only. The v1 single-file tool still lives at the repo root
-      # as `index.html`; it is no longer published.
+      # The built app only — never the repo root. Publishing `.` is what used to
+      # serve the old single-file tool instead of this build (see tag `v1-final`).
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:

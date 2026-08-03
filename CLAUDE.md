@@ -4,94 +4,48 @@ Guidance for Claude Code (and any AI assistant) working in this repository.
 
 ## What this is
 
-Glyph Grid Studio — a client-side web tool for generating typographic and ASCII visuals
-on a fixed 1920×1080 canvas, with export to SVG (Figma), PNG, JSON, and PNG image
-sequences (After Effects). No backend.
+Glyph Grid Studio — a client-side web tool for generating typographic, ASCII and halftone
+visuals on a canvas (1920×1080 by default, resizable), with export to SVG (Figma), PNG,
+JSON, GIF, MP4, and PNG image sequences (After Effects). No backend.
 
-It exists in two versions, and **`app/` (v2) is the one that ships**:
+**The app is `app/`** — React + Base UI + Vite, with layers, keyframes and a timeline.
+There is one copy of it and nothing to keep in sync.
 
-- **v2 — `app/`.** React + Base UI + Vite, the layered/keyframed rewrite. This is what
-  GitHub Pages serves and where new work goes.
-- **v1 — `index.html`.** The original single-file tool, kept at the repo root. Still
-  runs by opening the file, no longer deployed, and not where features land. Touch it
-  only when asked for it by name.
+An earlier version was a single self-contained `index.html` at the repo root: no build
+step, the whole tool in one file. It stopped being the published site on 2026-08-03 and
+is no longer in the tree. It lives at the tag **`v1-final`** — complete, and verified
+still working when that tag was cut:
+
+```bash
+git show v1-final:index.html > /tmp/v1.html   # just the tool, open it in a browser
+git checkout v1-final                         # the whole repo as it was, redeployable
+```
+
+Don't recreate it at the root, and don't port fixes into it. If someone asks for "the old
+single-file version", that tag is the answer.
 
 ## Project structure
 
-- `index.html` — **the entire application.** HTML, CSS, and JavaScript in one file.
-  This is intentional: it keeps the tool portable (open it anywhere, works offline)
-  and deployable as a static page with zero configuration.
+- `app/` — the application. Has its own `package.json`, Vite config and checks.
 - `README.md` — user-facing description and setup.
 - `CLAUDE.md` — this file.
-- `.github/workflows/deploy.yml` — builds `app/` and publishes it to GitHub Pages on push
-  to `main`. **The live site is v2.** The root `index.html` is kept as the v1 tool but is
-  no longer deployed — open it locally.
-
-**v1 has no package.json and no build tooling, and that is deliberate.** Don't add a
-bundler, framework, or transpiler to the root — it would break the "open the file and it
-runs" guarantee that is the point of v1. Build tooling belongs in `app/`, which has its
-own `package.json` and Vite config.
-
-## How the code is organized (inside index.html) — v1
-
-Read top to bottom; it's ordered deliberately.
-
-1. `<style>` — all CSS. Uses CSS custom properties in `:root`. The `--diatype` and
-   `--diamono` variables define the font stacks (ABC Diatype → fallbacks).
-2. Sidebar markup — the control panel, grouped in `<details>` sections
-   (Mode, Content, Grid, Spawn zone, Colors, Animation, Export, Randomness).
-3. `<script>` — the logic, in this order:
-   - Constants: `W`/`H` (1920×1080), `FONT_STACKS`, `DEFAULTS`, `state`.
-   - `makeRNG(seed)` — deterministic mulberry32 PRNG. **All randomness flows through
-     this seeded generator** so a given seed always reproduces the same layout.
-   - `buildCells()` — precomputes one record per grid cell with stable random values.
-   - `sampleImage()` — for ASCII mode: downscales the uploaded image to cols×rows and
-     stores per-cell luminance + RGB.
-   - `inZone(cx,cy)` — spawn-zone test (full / ellipse / brush mask).
-   - `drawScene(ctx, tSec, guide)` — **the single source of truth for rendering.**
-     Used by both the live canvas loop and the export paths. If you change how a glyph
-     is placed, colored, or animated, change it here and everywhere stays consistent.
-   - UI bindings — each control mutates `state`, then calls `draw()` or `rebuild()`.
-   - History (`snapshot`/`undo`), Reset, Surprise me.
-   - Export handlers (SVG / PNG / JSON / sequence / save-load project).
-   - `syncUIFromState()` — pushes `state` back into every control (used after undo,
-     reset, surprise, and project load).
+- `ARCHITECTURE.md` — how the app is put together, and why it was rebuilt.
+- `doc/UX-PLAN.md` — a competitive read of effect.app and a phased plan.
+- `.github/workflows/deploy.yml` — builds `app/` and publishes `app/dist` to GitHub Pages
+  on push to `main`.
 
 ## Key invariants — keep these true
 
-- **`drawScene` and `collectItems` must agree.** `drawScene` renders to canvas;
-  `collectItems` produces the element list for SVG/JSON export. They share the same
-  placement math. If they drift, exports won't match the preview.
-- **Determinism.** Same `state.seed` + same settings ⇒ identical layout. Don't
-  introduce `Math.random()` into the rendering path; use the seeded RNG in `buildCells`.
-- **`rebuild()` vs `draw()`.** Call `rebuild()` when the cell set changes
-  (cols, rows, seed, or a new image). Call `draw()` for everything else (colors,
-  size, jitter, animation params). `rebuild()` is heavier — it regenerates cells.
-- **Canvas is always 1920×1080.** Zoom is CSS-only (`applyZoom`); the backing canvas
-  never changes resolution, so exports stay full-res.
+- **Determinism.** Same seed + same settings ⇒ identical layout. Nothing in the *render
+  path* may call `Math.random()`; randomness there flows through `makeRNG` in
+  `engine/rng.ts`. Minting a value is a different act from rendering one — "New layout",
+  project ids and Surprise me all call `Math.random` deliberately, because what they
+  produce is written into the document as a concrete param value and rendered
+  deterministically from there. Keep that line where it is.
 - **Fonts are referenced, never bundled.** ABC Diatype is a licensed Dinamo font.
-  Do not commit font files or `@font-face` with an embedded font.
-
-## Common tasks
-
-- **Add a new animation type:** add an option to the `#animMode` `<select>`, then add a
-  branch in the animation block inside `drawScene` (and it will automatically work in
-  the sequence export, since export reuses `drawScene`).
-- **Add a new export format:** add a button in the Export `<details>`, write a handler
-  that reads from `collectItems()` (for vector/data) or renders via `drawScene` to an
-  offscreen canvas (for raster).
-- **Add a control:** add the input to the sidebar, add a field to `DEFAULTS` and `state`,
-  bind it (mutate state → `draw()`/`rebuild()` → `commit()` for undo), and add a line to
-  `syncUIFromState()` so undo/reset/load restore it.
+  Do not commit font files or an `@font-face` with an embedded font.
 
 ## Testing
-
-There's no test runner. To verify a change: open `index.html` in a browser and check
-the preview updates, then test each export button. The core math (RNG determinism,
-ASCII brightness mapping, grid-lock sizing) is pure and can be checked by copying those
-functions into a Node script if needed.
-
-### The v2 app (`app/`)
 
 `app/` has three headless checks — run all of them with `cd app && npm run check`:
 

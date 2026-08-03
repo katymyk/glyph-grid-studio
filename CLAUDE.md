@@ -181,8 +181,9 @@ or MP4 report comes in, ask for the console output first — it names the reason
   things to keep in sync, and syncing them is work that buys nothing.
 - **Retire, don't accumulate.** History belongs in tags (see `v1-final`) and in merged
   PRs, which survive branch deletion. A branch is a workspace, not a record.
-- Before merging to `main`, run `cd app && npm run check` — see Deployment for why the
-  deploy alone won't catch it.
+- Before merging to `main`, run `cd app && npm run check`. The deploy runs it too and
+  refuses to publish if it fails, so this is about speed and about not leaving a broken
+  commit on `main` — not about whether the live site is protected. It is.
 
 Solo repo, so PRs are optional; the checks are not. If you do open one, it is for the
 written record, not for review.
@@ -200,6 +201,14 @@ Two things keep that build working from a subpath; don't undo either:
   `/glyph-grid-studio/`. Setting an absolute `base` would hard-code the repo name.
 - **`app/package-lock.json` is committed.** `npm ci` requires it and fails without one.
 
-`npm run build` runs `tsc -b` first, so a type error fails the deploy rather than
-shipping. It does *not* run `check:math` or `check:smoke` — run `npm run check` yourself
-before pushing to `main`.
+**The deploy is gated on `npm run check`.** The workflow runs it before the build, so a
+failure means nothing is uploaded and the live site stays on the last good version. CI
+runs the same command you do — don't replace it with a hand-picked subset of the three
+checks, or the gate and the local rule will drift apart.
+
+The gate is why `tsc` alone isn't the bar: `check:math` and `check:smoke` catch what the
+type-checker can't see — a broken tone curve, a dither that stops being deterministic, a
+panel reading a param its mode doesn't declare. Those type-check perfectly.
+
+Still worth running locally before you merge: CI failing means `main` already has the bad
+commit (it just didn't ship), and the local run tells you in ~30s instead of ~2min.

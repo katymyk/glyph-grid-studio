@@ -35,7 +35,21 @@ jobs:
         working-directory: app
         run: npm ci
 
-      # Builds the v2 app. `vite.config.ts` sets `base: './'`, so the output is
+      # The gate. This runs BEFORE the build on purpose: if it fails, nothing is
+      # uploaded and nothing is deployed, so the live site stays on the last good
+      # version rather than being replaced by a broken one.
+      #
+      # It is deliberately the same `npm run check` a human is told to run (CLAUDE.md
+      # → Branches), not a hand-picked subset, so the two can't drift. The build's
+      # own `tsc -b` is not enough on its own: check:math and check:smoke catch what
+      # the type-checker cannot see — a broken tone curve, a dither that stops being
+      # deterministic, a panel reading a param its mode doesn't declare. All of those
+      # type-check perfectly and would have shipped.
+      - name: Check
+        working-directory: app
+        run: npm run check
+
+      # Builds the app. `vite.config.ts` sets `base: './'`, so the output is
       # path-relative and works from the Pages subpath without further config.
       - name: Build
         working-directory: app

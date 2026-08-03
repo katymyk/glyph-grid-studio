@@ -1,0 +1,40 @@
+name: Check
+
+# Runs the checks on work-in-progress branches, so a broken commit is caught before
+# it reaches `main` rather than after.
+#
+# `main` is deliberately excluded: the deploy workflow already runs the same
+# `npm run check` as its gate, and running it here too would burn double the minutes
+# and report one failure twice. Check runs attach to a commit rather than to a branch,
+# so if you do open a pull request it will show the run this workflow already did.
+on:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install
+        working-directory: app
+        run: npm ci
+
+      # The same command the deploy gate and CLAUDE.md use. Keep these three in step.
+      - name: Check
+        working-directory: app
+        run: npm run check

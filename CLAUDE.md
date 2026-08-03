@@ -32,7 +32,8 @@ single-file version", that tag is the answer.
 - `ARCHITECTURE.md` — how the app is put together, and why it was rebuilt.
 - `doc/UX-PLAN.md` — a competitive read of effect.app and a phased plan.
 - `.github/workflows/deploy.yml` — builds `app/` and publishes `app/dist` to GitHub Pages
-  on push to `main`.
+  on push to `main`, gated on `npm run check`.
+- `.github/workflows/check.yml` — runs `npm run check` on every branch except `main`.
 
 ## Key invariants — keep these true
 
@@ -181,9 +182,10 @@ or MP4 report comes in, ask for the console output first — it names the reason
   things to keep in sync, and syncing them is work that buys nothing.
 - **Retire, don't accumulate.** History belongs in tags (see `v1-final`) and in merged
   PRs, which survive branch deletion. A branch is a workspace, not a record.
-- Before merging to `main`, run `cd app && npm run check`. The deploy runs it too and
-  refuses to publish if it fails, so this is about speed and about not leaving a broken
-  commit on `main` — not about whether the live site is protected. It is.
+- Before merging to `main`, run `cd app && npm run check`. Two CI workflows run it as
+  well — `check.yml` on every branch that isn't `main`, and the deploy's own gate on
+  `main` — so this is about getting the answer in ~30s instead of ~2min, not about
+  whether the live site is protected. It is.
 
 Solo repo, so PRs are optional; the checks are not. If you do open one, it is for the
 written record, not for review.

@@ -5,6 +5,12 @@ against it, and a phased plan.
 
 Written 2026-08-01, against `app/` at commit `391fcea`.
 
+> **This is a dated snapshot, not a live status board.** Gap #1 below ("nothing is saved")
+> has since shipped — autosave to IndexedDB plus `.ggs` save/open, see `state/persist.ts`.
+> The other rows have not been re-audited since, so check a row against the code before
+> acting on it. Left as written because the competitive read and the ordering are still
+> the argument; only the evidence column goes stale.
+
 ---
 
 ## Part 1 — What effect.app actually is
@@ -72,7 +78,7 @@ Don't lose sight of these while fixing the gaps.
 
 | # | Gap | Evidence | Hurt |
 |---|---|---|---|
-| 1 | **Nothing is saved. Ever.** Close the tab and the work is gone. | No `localStorage`, no `IndexedDB`, no save/load anywhere in `app/src`. v1 *had* "Save project / Load project" ([index.html:371](../index.html#L371)) — v2 is a regression. | Fatal |
+| 1 | **Nothing is saved. Ever.** Close the tab and the work is gone. | No `localStorage`, no `IndexedDB`, no save/load anywhere in `app/src`. v1 *had* "Save project / Load project" ([index.html:371 at tag `v1-final`](https://github.com/katymyk/glyph-grid-studio/blob/v1-final/index.html#L371)) — v2 is a regression. **(Since shipped.)** | Fatal |
 | 2 | **No presets.** You cannot keep a look you made. | Only inline "quick set" chips for glyph sets and ASCII ramps. | Severe |
 | 3 | **No visual discovery.** The mode picker is three words in a segmented control. | [ModePanel.tsx:23](../app/src/panels/ModePanel.tsx#L23) | Severe |
 | 4 | **First run is a blank slate.** Boots into a default generative scene, no sample, no guidance. | — | Severe |

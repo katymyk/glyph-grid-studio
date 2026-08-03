@@ -21,8 +21,9 @@ When GitHub asks for repo details:
 
 1. Go to <https://github.com/new>. Enter the name and description above, set **Public**, click **Create repository**.
 2. On the new repo page, click **"uploading an existing file"**.
-3. Drag in **every file and folder** from this project (`index.html`, `README.md`,
-   `LICENSE`, `.gitignore`, `CLAUDE.md`, the `docs/` folder, and the `.github/` folder).
+3. Drag in **every file and folder** from this project (the `app/` folder, `README.md`,
+   `LICENSE`, `.gitignore`, `CLAUDE.md`, `ARCHITECTURE.md`, the `doc/` folder, and the
+   `.github/` folder).
    - GitHub's uploader can be fussy about folders — if `.github/workflows/deploy.yml`
      won't drag, you can add it after: **Add file → Create new file**, type the path
      `.github/workflows/deploy.yml`, and paste its contents.
@@ -89,7 +90,9 @@ refresh the same link.
 
 ## FAQ
 
-**Do I need to "build" anything?** No. It's one HTML file. GitHub Pages serves it as-is.
+**Do I need to "build" anything?** Not by hand — GitHub Actions does it. On every push to
+`main` the workflow runs the build in `app/` and publishes the result. (This used to be a
+single HTML file served as-is; see the `v1-final` tag.)
 
 **Will the fonts work for colleagues?** Only if they have ABC Diatype installed locally
 (it's a licensed font, so it can't ship in the repo). Without it they see the fallback
@@ -97,4 +100,4 @@ font — everything still works, it just looks slightly different. See README fo
 
 **Can I keep it private instead?** Yes — set the repo to Private. GitHub Pages still works
 on private repos on paid plans; on free, Pages requires Public. If you must stay private,
-colleagues can download `index.html` and open it locally.
+colleagues can clone the repo and run `cd app && npm install && npm run dev` locally.

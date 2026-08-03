@@ -1,12 +1,15 @@
-# Glyph Grid Studio — Architecture (v2 rewrite)
+# Glyph Grid Studio — Architecture
 
-Status: **proposal, for review.** No code scaffolded yet. This document defines the
-structure we'll build against before writing the app.
+Status: **as-built.** This began as a proposal written before any code existed; the app
+in `app/` was then built against it and is what ships. Phases 1–4 of §11 are done and
+phase 5 is largely done. Where the plan and the code disagree, the code is right — and
+this file is the bug. Sections 13–16 were written after the fact and describe shipped
+behaviour.
 
 ## 1. Why rewrite
 
-The current tool is a single `index.html` with all HTML/CSS/JS inline. That was the
-right call for a one-mode toy. The new goals outgrow it:
+The tool was a single `index.html` with all HTML/CSS/JS inline. That was the
+right call for a one-mode toy. The new goals outgrew it:
 
 - **Timeline animation** — animate any parameter from a start value to an end value
   (and beyond: multiple keyframes, easing).
@@ -174,17 +177,17 @@ resolvePlacements(scene, t) ─▶ Placement[] ─┬─▶ paintToCanvas()     
 
 ## 8. Directory layout
 
-The new app lives in **`app/`** so the current `index.html` at the repo root stays live
-and deployable untouched until the rewrite reaches parity.
+The app lives in **`app/`**. It was put there so the v1 `index.html` at the repo root
+could stay live and deployable until the rewrite reached parity; it has since passed
+parity, and v1 was retired to the tag `v1-final`.
 
 ```
 glyph-grid-studio/
-  index.html                 # v1 tool — untouched, stays deployed until parity
   ARCHITECTURE.md            # this file
-  app/                       # v2 — self-contained Vite project
+  app/                       # the app — self-contained Vite project
     index.html               # Vite entry (thin shell: <div id="root">)
     package.json
-    vite.config.ts           # base: '/glyph-grid-studio/' for Pages
+    vite.config.ts           # base: './' — relative, so Pages' subpath needs no config
     tsconfig.json
     public/
     src/
@@ -227,7 +230,9 @@ glyph-grid-studio/
         paramLabels.ts        # param -> label, derived from schema.ts
       canvas/
         Stage.tsx             # canvas + mask canvas + zoom/fit + rAF loop
-  legacy note: v1 index.html is not moved; v2 is promoted to root at parity.
+  legacy note (resolved): v1's index.html was never moved — at parity the deploy was
+  pointed at app/dist instead, and v1 was retired to the tag `v1-final`. `app/` stays
+  where it is; nothing was promoted to the root.
 ```
 
 ## 9. Design tokens & the paper workflow
@@ -242,23 +247,28 @@ glyph-grid-studio/
 ## 10. Build & deploy
 
 - Dev: `cd app && npm install && npm run dev`.
-- Build: `npm run build` → `app/dist/` (static).
-- Pages: while migrating, the existing workflow keeps publishing root `index.html`. At
-  parity we point the workflow at `app` (build + publish `app/dist`) and set Vite
-  `base: '/glyph-grid-studio/'`. The v1 tool stays reachable until then.
+- Build: `npm run build` → `app/dist/` (static). Runs `tsc -b` first, so a type error
+  fails the build rather than shipping.
+- Pages: the workflow builds `app/` and publishes `app/dist` on every push to `main`.
+  Vite's `base` is `'./'` rather than `'/glyph-grid-studio/'` as originally planned —
+  relative paths work at a domain root and under the Pages subpath alike, so the repo
+  name is not baked into the build. See CLAUDE.md → Deployment for what not to undo.
 
 ## 11. Migration phases
 
-1. **Foundation** — scaffold `app/` (Vite + React + TS + Base UI); port `engine/` +
+Phases 1–4 are **done**; phase 5 is largely done.
+
+1. ~~**Foundation**~~ — scaffold `app/` (Vite + React + TS + Base UI); port `engine/` +
    `domain/` as typed modules; render a single hard-coded scene to `<Stage>`. Proves
    the core end-to-end.
-2. **Design system** — build `ui/` over Base UI, wired to `tokens.css`.
-3. **Parity** — rebuild all v1 panels; match today's feature set (generative + ASCII,
+2. ~~**Design system**~~ — build `ui/` over Base UI, wired to `tokens.css`.
+3. ~~**Parity**~~ — rebuild all v1 panels; match today's feature set (generative + ASCII,
    spawn zones, colors, exports). Ship-switch the deploy.
-4. **New powers** — layers + keyframe timeline → more modes → blend/compose.
+4. ~~**New powers**~~ — layers + keyframe timeline → more modes → blend/compose.
+   (Halftone shipped as the third mode; a particle mode was tried and removed.)
 5. **Timeline you can see** — the dock (§4b): draggable keyframes with their easing
    curve drawn between them, per-keyframe ease-in/out + presets, hold keys, and the
-   mode-morph bar (§4a).
+   mode-morph bar (§4a). Mostly shipped — see §12.
 
 Each phase leaves something that runs.
 

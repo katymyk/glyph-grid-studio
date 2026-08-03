@@ -30,10 +30,17 @@ single-file version", that tag is the answer.
 - `README.md` — user-facing description and setup.
 - `CLAUDE.md` — this file.
 - `ARCHITECTURE.md` — how the app is put together, and why it was rebuilt.
-- `doc/UX-PLAN.md` — a competitive read of effect.app and a phased plan.
+- `doc/preview.png` — the shot in the README. Output art, so it doesn't date.
 - `.github/workflows/deploy.yml` — builds `app/` and publishes `app/dist` to GitHub Pages
   on push to `main`, gated on `npm run check`.
 - `.github/workflows/check.yml` — runs `npm run check` on every branch except `main`.
+
+**Plans, audits and roadmaps go in GitHub issues, not in files here.** A file has no
+closed state, so it goes on looking current long after it isn't — the UX plan is
+[issue #2](https://github.com/katymyk/glyph-grid-studio/issues/2) for exactly that reason,
+and `SHIP-IT.md` was deleted because its one-time job (create the repo) was done. Files in
+this repo should describe how the thing works **now**. If you catch yourself writing a
+status line into a doc, that belongs in an issue.
 
 ## Key invariants — keep these true
 

@@ -169,6 +169,24 @@ Neither Safari nor Firefox can be automated here, so both MP4 negotiation and th
 fallback are written to be correct by construction and to log why they degraded. If a video
 or MP4 report comes in, ask for the console output first — it names the reason.
 
+## Branches
+
+`main` is the live site — every push to it deploys. Keep it the only long-lived branch.
+
+- **One short-lived branch per change, named for that change** (`fix-video-seek`,
+  `ascii-cell-size`) — not for a person, a tool, or an epic. Merge it, then delete it
+  the same day. A branch that outlives the thing it was named for stops describing its
+  own contents, and its name becomes a lie.
+- **Never keep a branch that is identical to `main`.** Two names for one commit is two
+  things to keep in sync, and syncing them is work that buys nothing.
+- **Retire, don't accumulate.** History belongs in tags (see `v1-final`) and in merged
+  PRs, which survive branch deletion. A branch is a workspace, not a record.
+- Before merging to `main`, run `cd app && npm run check` — see Deployment for why the
+  deploy alone won't catch it.
+
+Solo repo, so PRs are optional; the checks are not. If you do open one, it is for the
+written record, not for review.
+
 ## Deployment
 
 Push to `main` → the GitHub Actions workflow runs `npm ci && npm run build` in `app/` and

@@ -79,6 +79,11 @@ Still browser-only, and worth doing by hand after engine changes: interactive la
 while dragging sliders, and the six export buttons (especially transparent-background
 PNG/SVG and the GIF/MP4-on-white paths).
 
+## Where the silent bugs live
+
+Three areas where a mistake doesn't throw — it renders, saves or exports the wrong thing
+and looks fine doing it. Each is written up because it has already gone wrong once.
+
 ### Sampling a source: resolution is not shape (`engine/sampleGrid.ts`, `engine/cover.ts`)
 
 Every mode that reads pixels asks for a `SampleGrid`: `{ cols, rows, aspect }`. Build it
@@ -201,7 +206,7 @@ written record, not for review.
 
 Push to `main` → the GitHub Actions workflow runs `npm ci && npm run build` in `app/` and
 publishes `app/dist` to GitHub Pages. The live URL is
-`https://<username>.github.io/glyph-grid-studio/`, and it serves **v2**.
+<https://katymyk.github.io/glyph-grid-studio/>, and it serves **v2**.
 
 Two things keep that build working from a subpath; don't undo either:
 

@@ -1,4 +1,4 @@
-# Glyph Grid Studio — Architecture
+# Fanfold — Architecture
 
 Status: **as-built.** This began as a proposal written before any code existed; the app
 in `app/` was then built against it and is what ships. Phases 1–4 of §11 are done and
@@ -187,7 +187,7 @@ glyph-grid-studio/
   app/                       # the app — self-contained Vite project
     index.html               # Vite entry (thin shell: <div id="root">)
     package.json
-    vite.config.ts           # base: './' — relative, so Pages' subpath needs no config
+    vite.config.ts           # base: './' — relative, so any host path needs no config
     tsconfig.json
     public/
     src/
@@ -249,10 +249,11 @@ glyph-grid-studio/
 - Dev: `cd app && npm install && npm run dev`.
 - Build: `npm run build` → `app/dist/` (static). Runs `tsc -b` first, so a type error
   fails the build rather than shipping.
-- Pages: the workflow builds `app/` and publishes `app/dist` on every push to `main`.
-  Vite's `base` is `'./'` rather than `'/glyph-grid-studio/'` as originally planned —
-  relative paths work at a domain root and under the Pages subpath alike, so the repo
-  name is not baked into the build. See CLAUDE.md → Deployment for what not to undo.
+- Deploy: Vercel builds `app/` and serves `app/dist` at <https://fanfold.app> on every
+  push to `main` — the only live version since the rename. (It was GitHub Pages before,
+  at a repo subpath.) Vite's `base` stays `'./'` rather than an absolute path: relative
+  paths work at a domain root, under a subpath and in `vite preview` alike, so no host is
+  baked into the build. See CLAUDE.md → Deployment for what not to undo.
 
 ## 11. Migration phases
 

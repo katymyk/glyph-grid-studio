@@ -41,6 +41,11 @@ import { isVideoRef } from './sources';
  */
 export const PROJECT_VERSION = 3;
 export const PROJECT_EXT = 'ggs';
+/* Both of the above outlived the rename to Fanfold on purpose. `FORMAT` is written into
+   every `.ggs` ever saved and is checked on the way back in, so changing it makes
+   `parseProject` reject every file that already exists — including the ones people have
+   on disk. Renaming the extension strands those files in the open dialog for the same
+   reason. Change either only behind a migration that still accepts the old value. */
 const FORMAT = 'glyph-grid-studio';
 
 /** Enough to name a clip you need to find again, and to sanity-check the one you pick. */
@@ -294,7 +299,7 @@ export function parseProject(raw: unknown): ProjectDoc {
       bad("That file isn't readable as a project — it may not be a .ggs file.");
     }
   }
-  if (!isObj(v)) bad("That file isn't a Glyph Grid Studio project.");
+  if (!isObj(v)) bad("That file isn't a Fanfold project.");
 
   // The other JSON this app writes is the After Effects coordinate export, and someone
   // will open one here. Say which file they've picked rather than "not a project".
@@ -302,7 +307,7 @@ export function parseProject(raw: unknown): ProjectDoc {
     if (Array.isArray(v.items)) {
       bad('That looks like a coordinates export (for After Effects), not a project file.');
     }
-    bad("That file isn't a Glyph Grid Studio project.");
+    bad("That file isn't a Fanfold project.");
   }
 
   const version = num(v.version) ? v.version : 0;

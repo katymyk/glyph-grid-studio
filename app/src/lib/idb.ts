@@ -18,6 +18,10 @@
  */
 import type { ProjectDoc } from '../domain/project';
 
+/* The tool was renamed to Fanfold; this string deliberately was not. It is the key the
+   browser files every user's autosaved work and Recent list under, so renaming it does
+   not migrate anything — it points the app at a fresh, empty database and silently
+   orphans the old one. Nothing throws and nothing looks broken; the work is just gone. */
 const DB_NAME = 'glyph-grid-studio';
 const DB_VERSION = 1;
 const PROJECTS = 'projects';

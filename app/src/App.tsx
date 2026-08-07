@@ -72,7 +72,7 @@ export function App() {
       >
         <header style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
           <h1 style={{ fontSize: 14, fontFamily: 'var(--diamono)', margin: 0, fontWeight: 600 }}>
-            Glyph Grid Studio
+            fanfold
           </h1>
           <p style={{ color: 'var(--muted)', fontSize: 11, margin: '4px 0 0' }}>
             v2 · React + Base UI

@@ -4,7 +4,7 @@ Guidance for Claude Code (and any AI assistant) working in this repository.
 
 ## What this is
 
-Glyph Grid Studio — a client-side web tool for generating typographic, ASCII and halftone
+Fanfold — a client-side web tool for generating typographic, ASCII and halftone
 visuals on a canvas (1920×1080 by default, resizable), with export to SVG (Figma), PNG,
 JSON, GIF, MP4, and PNG image sequences (After Effects). No backend.
 
@@ -194,35 +194,61 @@ or MP4 report comes in, ask for the console output first — it names the reason
   things to keep in sync, and syncing them is work that buys nothing.
 - **Retire, don't accumulate.** History belongs in tags (see `v1-final`) and in merged
   PRs, which survive branch deletion. A branch is a workspace, not a record.
-- Before merging to `main`, run `cd app && npm run check`. Two CI workflows run it as
-  well — `check.yml` on every branch that isn't `main`, and the deploy's own gate on
-  `main` — so this is about getting the answer in ~30s instead of ~2min, not about
-  whether the live site is protected. It is.
+- Before merging to `main`, run `cd app && npm run check`. Two things run it as well —
+  `check.yml` on every branch including `main`, and Vercel's own build command — so this
+  is about getting the answer in ~30s instead of ~2min, not about whether the live site
+  is protected. It is.
 
 Solo repo, so PRs are optional; the checks are not. If you do open one, it is for the
 written record, not for review.
 
 ## Deployment
 
-Push to `main` → the GitHub Actions workflow runs `npm ci && npm run build` in `app/` and
-publishes `app/dist` to GitHub Pages. The live URL is
-<https://katymyk.github.io/glyph-grid-studio/>, and it serves **v2**.
+Push to `main` → **Vercel** builds `app/` and serves it at <https://fanfold.app>. That is
+the only live version; the GitHub Pages deploy was retired at the rename and its workflow
+is gone. Don't add it back — two live copies of one tool is one copy too many, and the
+Pages one would go stale silently.
 
-Two things keep that build working from a subpath; don't undo either:
+The build is configured in `app/vercel.json`, and Vercel's **Root Directory** is set to
+`app` in the project settings. That setting lives in the dashboard, not in the repo, so
+if a deploy ever builds the wrong thing, check it first.
+
+Three things keep the build working; don't undo any of them:
 
 - **`base: './'` in `app/vite.config.ts`.** The emitted `index.html` references
-  `./assets/…`, so the same artifact works at a domain root or under
-  `/glyph-grid-studio/`. Setting an absolute `base` would hard-code the repo name.
+  `./assets/…`, so the artifact works at a domain root or from a subpath alike. It is
+  already correct for `fanfold.app` — leaving it relative costs nothing and keeps preview
+  deploys and local `vite preview` working.
 - **`app/package-lock.json` is committed.** `npm ci` requires it and fails without one.
+- **`buildCommand` runs `npm run check` before `npm run build`.** That is the gate.
 
-**The deploy is gated on `npm run check`.** The workflow runs it before the build, so a
-failure means nothing is uploaded and the live site stays on the last good version. CI
-runs the same command you do — don't replace it with a hand-picked subset of the three
-checks, or the gate and the local rule will drift apart.
+**The deploy is gated on `npm run check`.** Vercel runs it before the build, so a failure
+means the deploy fails and `fanfold.app` stays on the last good version rather than being
+replaced by a broken one. It is deliberately the same `npm run check` a human is told to
+run — don't replace it with a hand-picked subset of the three checks, or the gate and the
+local rule will drift apart.
 
 The gate is why `tsc` alone isn't the bar: `check:math` and `check:smoke` catch what the
 type-checker can't see — a broken tone curve, a dither that stops being deterministic, a
 panel reading a param its mode doesn't declare. Those type-check perfectly.
 
+`check.yml` runs the same command on every branch **including `main`**, so a bad commit is
+reported on GitHub as well as failing the deploy. It covers `main` because the Pages
+workflow used to be what checked it; when that went, this had to pick the job up.
+
 Still worth running locally before you merge: CI failing means `main` already has the bad
 commit (it just didn't ship), and the local run tells you in ~30s instead of ~2min.
+
+### The name is not the format
+
+The tool was Glyph Grid Studio until the rename to Fanfold. Two strings deliberately kept
+the old value, and both are load-bearing:
+
+- **`DB_NAME` in `lib/idb.ts`** — the IndexedDB key every user's autosave and Recent list
+  lives under. Renaming it doesn't migrate anything; it opens a fresh empty database and
+  orphans the real one. Nothing throws.
+- **`FORMAT` in `domain/project.ts`** (and `PROJECT_EXT = 'ggs'`) — written into every
+  `.ggs` ever saved and checked on the way back in. Rename it and every existing file is
+  refused as "not a Fanfold project".
+
+Change either only behind a migration that still accepts the old value.

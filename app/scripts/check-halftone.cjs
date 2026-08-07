@@ -1133,7 +1133,7 @@ sec('project: clip references');
       catch (e) { return e instanceof project.ProjectParseError && e.message.includes(fragment); }
     };
     ok('not JSON at all', refuses('<html>', 'may not be a .ggs'));
-    ok('JSON, but not ours', refuses('{"hello":1}', "isn't a Glyph Grid Studio project"));
+    ok('JSON, but not ours', refuses('{"hello":1}', "isn't a Fanfold project"));
     // Someone will open the After Effects export here. Naming which file they picked beats
     // "not a project".
     ok('the coordinates export is identified by name',

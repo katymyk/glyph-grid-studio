@@ -1,15 +1,16 @@
 name: Check
 
-# Runs the checks on work-in-progress branches, so a broken commit is caught before
-# it reaches `main` rather than after.
+# Runs the checks on every branch, so a broken commit is caught before it reaches `main`
+# rather than after.
 #
-# `main` is deliberately excluded: the deploy workflow already runs the same
-# `npm run check` as its gate, and running it here too would burn double the minutes
-# and report one failure twice. Check runs attach to a commit rather than to a branch,
-# so if you do open a pull request it will show the run this workflow already did.
+# `main` used to be excluded here because the GitHub Pages deploy workflow ran the same
+# `npm run check` as its gate, and running it twice would have burned double the minutes
+# and reported one failure twice. That workflow was retired when the site moved to Vercel
+# at the rename, so this one picked the job up: without it, `main` would have no check on
+# GitHub at all — only Vercel's build, which reports in the Vercel dashboard rather than
+# against the commit.
 on:
   push:
-    branches-ignore: [main]
   workflow_dispatch:
 
 concurrency:
@@ -34,7 +35,7 @@ jobs:
         working-directory: app
         run: npm ci
 
-      # The same command the deploy gate and CLAUDE.md use. Keep these three in step.
+      # The same command Vercel's build gate and CLAUDE.md use. Keep these three in step.
       - name: Check
         working-directory: app
         run: npm run check

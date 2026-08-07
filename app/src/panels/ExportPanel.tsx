@@ -68,18 +68,18 @@ export function ExportPanel() {
     run('svg', async () => {
       if (!heavyOk('SVG')) return;
       const settled = await settleSources(scene, playhead);
-      download(new Blob([sceneToSVG(scene, playhead)], { type: 'image/svg+xml' }), 'glyph-grid.svg');
+      download(new Blob([sceneToSVG(scene, playhead)], { type: 'image/svg+xml' }), 'fanfold.svg');
       setNote(unsettledNote({ unsettled: settled ? 0 : 1, total: 1 }));
     });
   const exJSON = () =>
     run('json', async () => {
       if (!heavyOk('JSON')) return;
       const settled = await settleSources(scene, playhead);
-      download(new Blob([sceneToJSON(scene, playhead)], { type: 'application/json' }), 'glyph-grid.json');
+      download(new Blob([sceneToJSON(scene, playhead)], { type: 'application/json' }), 'fanfold.json');
       setNote(unsettledNote({ unsettled: settled ? 0 : 1, total: 1 }));
     });
   const exPNG = () =>
-    run('png', async () => download(await sceneToPNGBlob(scene, playhead, 2), 'glyph-grid@2x.png'));
+    run('png', async () => download(await sceneToPNGBlob(scene, playhead, 2), 'fanfold@2x.png'));
 
   // Every animated export reports how many frames it had to write without their real
   // source data, and every one of them says so. Swallowing that is what let a video
@@ -87,13 +87,13 @@ export function ExportPanel() {
   const runGIF = () =>
     run('gif', async (onProgress) => {
       const { blob, fidelity } = await sceneToGIF(scene, onProgress);
-      download(blob, `glyph-grid_${scene.fps}fps.gif`);
+      download(blob, `fanfold_${scene.fps}fps.gif`);
       setNote(unsettledNote(fidelity));
     });
   const runSeq = () =>
     run('seq', async (onProgress) => {
       const { blob, fidelity } = await sceneToSequence(scene, onProgress);
-      download(blob, `glyph-sequence_${scene.fps}fps.zip`);
+      download(blob, `fanfold-sequence_${scene.fps}fps.zip`);
       setNote(unsettledNote(fidelity));
     });
   const runMP4 = () =>
@@ -102,7 +102,7 @@ export function ExportPanel() {
       // Name the codec when H.264 wasn't available. A silent HEVC-in-MP4 that Premiere
       // refuses to open is worse than a longer filename.
       const suffix = codec === 'avc' ? '' : `_${codec}`;
-      download(blob, `glyph-grid_${scene.fps}fps${suffix}.mp4`);
+      download(blob, `fanfold_${scene.fps}fps${suffix}.mp4`);
       const partial = unsettledNote(fidelity);
       if (codec !== 'avc') {
         setNote(
